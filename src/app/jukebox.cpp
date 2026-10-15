@@ -23,6 +23,7 @@ bool Jukebox::open(GameModule* module, const std::vector<uint8_t>& rom, const Se
     playing_ = -1;
     elapsed_ = 0;
     scroll_ = 0;
+    free_scroll_ = false;
     paused_ = false;
     close_requested_ = false;
     switch_dir_ = 0;
@@ -41,12 +42,30 @@ void Jukebox::update(const UiInput& in) {
     int n = (int)list_.size();
     if (in.menu || in.back) { close_requested_ = true; return; }
     if (n == 0) return;
-    if (in.up) sel_ = (sel_ - 1 + n) % n;
-    if (in.down) sel_ = (sel_ + 1) % n;
-    if (in.page_left) sel_ = std::max(0, sel_ - 10);
-    if (in.page_right) sel_ = std::min(n - 1, sel_ + 10);
-    if (!sfx_ && (in.left || in.right)) switch_dir_ = in.left ? -1 : 1;
-    if (in.confirm) {
+    // touch: dragging scrolls the list with the finger, a tap on a track plays it (or stops it, if it is
+    // playing), a tap on the game switch moves to the next game, a tap on the title area goes back
+    UiInput t = in;
+    if (in.drag != 0 && row_ > 0) {
+        scroll_ -= in.drag / row_;
+        free_scroll_ = true;
+    }
+    if (in.up || in.down || in.page_left || in.page_right) free_scroll_ = false;
+    if (in.tap) {
+        auto inside = [&](const Rect& r) { return in.tap_x >= r.x && in.tap_x < r.x + r.w && in.tap_y >= r.y && in.tap_y < r.y + r.h; };
+        if (!sfx_ && inside(switch_rect_)) { switch_dir_ = 1; return; }
+        if (in.tap_y < list_rect_.y) { close_requested_ = true; return; }
+        if (inside(list_rect_) && row_ > 0) {
+            int i = (int)std::floor((in.tap_y - list_y0_) / row_ + scroll_);
+            if (i >= 0 && i < n) { sel_ = i; t.confirm = true; }
+        }
+    }
+    const UiInput& inp = t;
+    if (inp.up) sel_ = (sel_ - 1 + n) % n;
+    if (inp.down) sel_ = (sel_ + 1) % n;
+    if (inp.page_left) sel_ = std::max(0, sel_ - 10);
+    if (inp.page_right) sel_ = std::min(n - 1, sel_ + 10);
+    if (!sfx_ && (inp.left || inp.right)) switch_dir_ = inp.left ? -1 : 1;
+    if (inp.confirm) {
         // Enter on the entry that is still playing stops it (music, and looping effects); a finished
         // effect has already gone back to "stopped", so Enter plays it again.
         if (playing_ == sel_) {
@@ -91,14 +110,22 @@ void Jukebox::draw(Video& v, float time, uint32_t accent) {
     const float pad = H * 0.05f;
     v.draw_text(FontId::Title, pad, pad * 0.7f, sfx_ ? "Sound Test" : "Music Player", accent);
     v.draw_text(FontId::Body, pad, pad * 0.7f + v.line_height(FontId::Title), module_->title(), 0xFFB9C1D2);
-    if (!sfx_) v.draw_text(FontId::Small, W - pad, pad * 0.9f, "\xE2\x97\x80 \xE2\x96\xB6  switch game", 0xFF7C8598, Align::Right);
+    if (!sfx_) {
+        const char* sw = touch_ui ? "Tap here to switch game  \xE2\x96\xB6" : "\xE2\x97\x80 \xE2\x96\xB6  switch game";
+        float tw = v.measure_text(FontId::Small, sw);
+        v.draw_text(FontId::Small, W - pad, pad * 0.9f, sw, 0xFF7C8598, Align::Right);
+        switch_rect_ = {W - pad - tw - pad * 0.5f, 0, tw + pad * 1.5f, pad * 0.9f + v.line_height(FontId::Small) * 1.6f};
+    }
 
     // Track list
     Rect list = {pad, H * 0.2f, W * 0.46f, H * 0.68f};
     draw_panel(v, list, accent);
     const float row = v.line_height(FontId::Body) * 1.25f;
+    list_rect_ = list; row_ = row; list_y0_ = list.y + pad * 0.3f;
     int visible = std::max(1, (int)((list.h - pad * 0.6f) / row));
-    float target = std::clamp((float)sel_ - visible * 0.5f + 0.5f, 0.0f, (float)std::max(0, (int)list_.size() - visible));
+    const float most = (float)std::max(0, (int)list_.size() - visible);
+    float target = std::clamp(free_scroll_ ? scroll_ : (float)sel_ - visible * 0.5f + 0.5f, 0.0f, most);
+    if (free_scroll_) scroll_ = target;
     scroll_ += (target - scroll_) * 0.3f;
     int first = std::max(0, (int)scroll_);
     for (int i = first; i < (int)list_.size() && i <= first + visible; i++) {
@@ -152,5 +179,6 @@ void Jukebox::draw(Video& v, float time, uint32_t accent) {
     }
     const char* help = sfx_ ? "\xE2\x86\x91\xE2\x86\x93 Select    Enter / (A) Play / Stop    PgUp/PgDn (LB/RB) Jump    Esc / (B) Back"
                             : "\xE2\x86\x91\xE2\x86\x93 Select    Enter / (A) Play / Stop    \xE2\x86\x90\xE2\x86\x92 Switch game    Esc / (B) Back";
+    if (touch_ui) help = "Tap a track to play or stop it    Drag to scroll    Back to return";
     v.draw_text(FontId::Small, W * 0.5f, H - v.line_height(FontId::Small) * 1.8f, help, with_alpha(0xFF6C7488, 1.0f - hint_fade_), Align::Center);
 }

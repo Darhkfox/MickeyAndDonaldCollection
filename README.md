@@ -39,6 +39,19 @@ revision (REV 01), or a modified copy / bad dump. The other games still work.
 To start a game directly, give `DisneyClassics.exe` the argument `--game coi`, `--game qs` or `--game woi`
 (e.g. in a shortcut).
 
+**On Android** (64-bit phones and tablets, Android 6.0 or later):
+1. Download the APK from the Releases page and open it on your phone. Android asks you to allow installing
+   apps from your browser or file manager the first time.
+2. Copy your ROMs (or a zip of them) to the phone.
+3. Start the app and tap **Add ROMs**. Pick the files (several at once is fine); they are copied into the app,
+   so you only do this once.
+
+The games are played with on-screen touch controls: a D-pad, A / B / C, Start, Menu, and fast forward /
+rewind when those are switched on. A Bluetooth or USB controller works too (Xbox, PlayStation, Switch and most
+others, by button position), and hides them; the Back gesture or button opens the pause menu. Menus, the
+launcher and the music player work by tapping and dragging. The first start picks the widest widescreen mode
+that fits the screen (2:1 on most phones).
+
 ## Features
 
 **Launcher**
@@ -131,7 +144,7 @@ folder isn't writable. Delete `settings.ini` to restore the defaults.
 ## Building from source
 
 Requirements: Windows 10/11, Visual Studio 2022 (or the Build Tools) with the C++ workload, CMake 3.20+.
-There are no third-party dependencies.
+The Windows build has no third-party dependencies.
 
 ```
 build.bat                                         :: builds build\bin\DisneyClassics.exe (Release, static CRT)
@@ -142,14 +155,31 @@ powershell -ExecutionPolicy Bypass -File release.ps1
                                                   ::   the exe and readme.txt only (no ROMs)
 ```
 
+### Android
+
+The same code builds for Android (`android/`), with SDL2 2.32.10 compiled from source for the window, sound
+and controllers. You need the Android SDK with NDK 28.2 and CMake 3.31.6 (both from the SDK manager) and JDK
+17–21 for Gradle.
+
+```
+powershell android\fetch_sdl.ps1
+cd android
+gradlew assembleDebug
+```
+
+The APK ends up in `android/app/build/outputs/apk/`. Release builds are signed when `android/keystore.properties`
+(`storeFile`, `storePassword`, `keyAlias`, `keyPassword`) and its keystore are present; both stay out of git.
+A log line every 5 seconds gives the frame rate and the work per frame (`adb logcat | findstr fps`).
+
 ### Source layout
 
 | Path | Contents |
 |---|---|
 | `src/core/` | Mega Drive hardware: 68000, Z80, VDP (with widescreen rendering: wider line buffer, 10-bit sprite X, per-line hooks), YM2612, SN76489, save states |
 | `src/game/` | Per-game modules (`coi.cpp`, `qs.cpp`, `woi.cpp`): ROM patches, widescreen rules, HUD layout, edge masks, cheats, level select, sound lists; `common.cpp` applies patch lists |
-| `src/app/` | Launcher, sessions, menus, music player / sound test, rewind, settings, ROM finder (`romfind.cpp`, `unzip.cpp`), PNG writer |
-| `src/platform/` | Direct3D 11 video and DirectWrite UI text, XAudio2 audio, keyboard / XInput / DirectInput input |
+| `src/app/` | Launcher, sessions, menus, music player / sound test, rewind, settings, ROM finder (`romfind.cpp`, `unzip.cpp`), PNG writer, touch controls (`touch.cpp`); per platform: `app_win.cpp` / `app_android.cpp` (window, main loop) and `sys_win.cpp` / `sys_android.cpp` (files, folders, links) |
+| `src/platform/` | Windows: Direct3D 11 video and DirectWrite UI text, XAudio2 audio, keyboard / XInput / DirectInput input. `android/`: OpenGL ES 3.0 video (the same filters as GLSL; UI text from Android's own fonts), SDL audio and controllers |
+| `android/` | Gradle project; `MDActivity.java` adds the ROM picker and the UI font rasteriser to SDL's activity |
 | `src/tools/mdtool.cpp`, `tools/mdt.py` | Headless core as a DLL with a Python wrapper, used for all the reverse engineering and testing |
 | `tools/m68dis.py` | 68000 disassembler (capstone) used during development |
 | `tools/re/` | Reverse-engineering scripts behind the notes in `docs/` |
@@ -215,8 +245,11 @@ powershell -ExecutionPolicy Bypass -File release.ps1
 
 - PC port by Darhkfox — [YouTube](https://www.youtube.com/adhgaming) ·
   [Reddit u/Darhkwing](https://www.reddit.com/user/Darhkwing) · [GitHub](https://github.com/Darhkfox).
-- The port's own code is released under the MIT licence (`LICENSE`). It has no third-party code: the
-  Mega Drive core is written from scratch. UI text uses the system's Segoe UI font through DirectWrite.
+- The port's own code is released under the MIT licence (`LICENSE`). The Mega Drive core is written from
+  scratch. UI text uses the system font (Segoe UI through DirectWrite on Windows, Android's own font on
+  Android).
+- The Android build uses SDL2 by Sam Lantinga and contributors, zlib licence (fetched by
+  `android/fetch_sdl.ps1`, not stored in this repository).
 - *Castle of Illusion*, *QuackShot* and *World of Illusion* © 1990–1992 Sega. Mickey Mouse and Donald Duck
   © Disney. This project contains no ROM data. It is an unofficial fan project, not affiliated with or
   endorsed by Sega or Disney.

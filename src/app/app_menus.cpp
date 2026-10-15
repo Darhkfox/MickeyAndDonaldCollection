@@ -1,8 +1,6 @@
 // Pause menu, options pages, cheats, level select.
 #include "app.h"
-#include <shellapi.h>
 #include <cstdio>
-#include <fstream>
 
 namespace {
 std::string pct(int v) { return std::to_string(v) + "%"; }
@@ -21,9 +19,9 @@ void App::open_pause_menu() {
                                        [this](int v) { state_slot_ = v + 1; }, "Choose the save-state slot (F5 saves, F9 loads in game)."));
     p.items.push_back(MenuItem::action("Save State", [this]() { quick_save(); menu_.close(); }));
     p.items.push_back(MenuItem::action("Load State", [this]() {
-        std::ifstream f(save_path(state_slot_), std::ios::binary);
+        FILE* f = open_file(save_path(state_slot_), "rb");
         if (!f) { menu_.toast("Slot " + std::to_string(state_slot_) + " is empty"); return; }
-        f.close();
+        fclose(f);
         quick_load();
         menu_.close();
     }));
@@ -77,6 +75,15 @@ void App::open_options_menu(bool from_launcher) {
     p.items.push_back(MenuItem::toggle("Rewind", [this]() { return settings_.rewind; },
                                        [this](bool v) { settings_.rewind = v; if (!v) rewind_.clear(); },
                                        "Hold R or the left trigger to step back through the last minute of play."));
+#ifdef __ANDROID__
+    p.items.push_back(MenuItem::header("Touch screen"));
+    p.items.push_back(MenuItem::choice("On-screen Controls", {"When touched", "Always", "Off"}, [this]() { return settings_.touch_mode; },
+                                       [this](int v) { settings_.touch_mode = v; touch_.visible = touch_active_ ? v != 2 : v == 1; },
+                                       "When touched: the pad shows while you use the screen and hides when a controller is used."));
+    p.items.push_back(MenuItem::slider("Controls Opacity", 10, 100, 5, [this]() { return settings_.touch_opacity; },
+                                       [this](int v) { settings_.touch_opacity = v; }, [](int v) { return std::to_string(v) + "%"; }));
+#endif
+#ifdef _WIN32   // (keyboard hotkeys: a phone rarely has a keyboard)
     p.items.push_back(MenuItem::header("Hotkeys"));
     p.items.push_back(MenuItem::info("Menu", []() { return std::string("Esc / (Back)"); }));
     p.items.push_back(MenuItem::info("Fullscreen", []() { return std::string("F11 / Alt+Enter"); }));
@@ -84,6 +91,7 @@ void App::open_options_menu(bool from_launcher) {
     p.items.push_back(MenuItem::info("Fast forward (hold)", []() { return std::string("Tab / RT"); }));
     p.items.push_back(MenuItem::info("Rewind (hold)", []() { return std::string("R / LT"); }));
     p.items.push_back(MenuItem::info("Screenshot", []() { return std::string("F12"); }));
+#endif
     p.on_back = [this]() { save_settings(); };
     if (from_launcher) menu_.open(std::move(p));
     else menu_.push(std::move(p));
@@ -95,17 +103,17 @@ void App::open_credits(bool from_launcher) {
     p.subtitle = std::string("Mickey & Donald Collection  \xE2\x80\xA2  v") + kAppVersion;
     p.wide = true;
     p.items.push_back(MenuItem::header("Find me over at:"));
-    auto link = [this](const char* label, const char* shown, const wchar_t* url) {
+    auto link = [this](const char* label, const char* shown, const char* url) {
         MenuItem it = MenuItem::action(label, [this, url]() {
             if (autotest_) return;   // scripted test runs never open a browser
-            ShellExecuteW(nullptr, L"open", url, nullptr, nullptr, SW_SHOWNORMAL);
+            open_url(url);
         }, "Enter / (A) opens it in your web browser.");
         it.value_text = [shown]() { return std::string(shown); };
         return it;
     };
-    p.items.push_back(link("YouTube", "https://www.youtube.com/adhgaming", L"https://www.youtube.com/adhgaming"));
-    p.items.push_back(link("Reddit", "u/Darhkwing", L"https://www.reddit.com/user/Darhkwing"));
-    p.items.push_back(link("GitHub", "https://github.com/Darhkfox", L"https://github.com/Darhkfox"));
+    p.items.push_back(link("YouTube", "https://www.youtube.com/adhgaming", "https://www.youtube.com/adhgaming"));
+    p.items.push_back(link("Reddit", "u/Darhkwing", "https://www.reddit.com/user/Darhkwing"));
+    p.items.push_back(link("GitHub", "https://github.com/Darhkfox", "https://github.com/Darhkfox"));
     if (from_launcher) menu_.open(std::move(p));
     else menu_.push(std::move(p));   // from the pause menu: Back returns to it
 }
@@ -114,6 +122,7 @@ MenuPage App::video_page() {
     MenuPage p;
     p.title = "Video";
     auto changed = [this]() { apply_settings(); };
+#ifdef _WIN32
     p.items.push_back(MenuItem::choice("Display Mode", {"Windowed", "Fullscreen"}, [this]() { return settings_.fullscreen ? 1 : 0; },
                                        [this, changed](int v) { settings_.fullscreen = v == 1; changed(); }));
     {
@@ -132,6 +141,7 @@ MenuPage App::video_page() {
                                    [](int v) { return std::to_string(v) + "x"; }, "Size of the window in windowed mode.");
     ws.enabled = [this]() { return !settings_.fullscreen; };
     p.items.push_back(ws);
+#endif
     {
         // In a game only the widths it supports are offered (the setting is shared: a wider one chosen in
         // another game shows here as this game's widest).
@@ -156,7 +166,9 @@ MenuPage App::video_page() {
                                        [this](bool v) { settings_.integer_scale = v; }, "Scale only by whole numbers for perfectly even pixels."));
     p.items.push_back(MenuItem::choice("Filter", {"Nearest (sharp)", "Sharp bilinear", "Bilinear (smooth)", "Scanlines", "CRT"},
                                        [this]() { return settings_.filter; }, [this](int v) { settings_.filter = v; }));
+#ifdef _WIN32
     p.items.push_back(MenuItem::toggle("VSync", [this]() { return settings_.vsync; }, [this, changed](bool v) { settings_.vsync = v; changed(); }));
+#endif
     p.items.push_back(MenuItem::toggle("Remove Sprite Flicker", [this]() { return settings_.no_sprite_limit; },
                                        [this, changed](bool v) { settings_.no_sprite_limit = v; changed(); },
                                        "Lifts the hardware limit on sprites per line."));

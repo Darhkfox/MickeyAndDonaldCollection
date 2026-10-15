@@ -1,4 +1,5 @@
 #include "png.h"
+#include "sys.h"
 #include <cstdio>
 #include <vector>
 
@@ -59,7 +60,8 @@ bool write_png(const std::wstring& path, const uint32_t* px, int w, int h) {
     chunk(out, "IDAT", z);
     chunk(out, "IEND", {});
     FILE* f = nullptr;
-    if (_wfopen_s(&f, path.c_str(), L"wb") != 0 || !f) return false;
+    f = open_file(path, "wb");
+    if (!f) return false;
     fwrite(out.data(), 1, out.size(), f);
     fclose(f);
     return true;

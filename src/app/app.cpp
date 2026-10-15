@@ -1,264 +1,18 @@
 #include "app.h"
 #include "png.h"
-#include <objbase.h>
-#include <dwmapi.h>
-#include <mmsystem.h>
-#include <shellapi.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <ctime>
 #include <chrono>
-#include <fstream>
-#include <iterator>
+#include <sstream>
+#ifdef __ANDROID__
+#include <SDL.h>
+#endif
 
-#pragma comment(lib, "winmm.lib")
-#pragma comment(lib, "dwmapi.lib")
-#pragma comment(lib, "shell32.lib")
-
-namespace {
-App* g_app = nullptr;
-const double kEmuFps = 53693175.0 / (3420.0 * 262.0);   // 59.9227 Hz
-const wchar_t* kWindowClass = L"MickeyDonaldPortWindow";
-const wchar_t* kWindowTitle = L"Mickey & Donald Collection v1.0";   // keep in step with kAppVersion
-
-LRESULT CALLBACK wnd_thunk(HWND h, UINT m, WPARAM w, LPARAM l) {
-    if (g_app) return g_app->wndproc(h, m, w, l);
-    return DefWindowProcW(h, m, w, l);
-}
-
-double display_refresh(HWND hwnd) {
-    HMONITOR mon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-    MONITORINFOEXW mi;
-    mi.cbSize = sizeof(mi);
-    if (GetMonitorInfoW(mon, &mi)) {
-        DEVMODEW dm = {};
-        dm.dmSize = sizeof(dm);
-        if (EnumDisplaySettingsW(mi.szDevice, ENUM_CURRENT_SETTINGS, &dm) && dm.dmDisplayFrequency > 1)
-            return dm.dmDisplayFrequency == 59 ? 59.94 : (double)dm.dmDisplayFrequency;
-    }
-    return 60.0;
-}
-
-std::wstring widen(const std::string& s) {
-    int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-    std::wstring w(n, 0);
-    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], n);
-    return w;
-}
-}  // namespace
-
-// ---------------------------------------------------------------------------
-// Startup / shutdown
-// ---------------------------------------------------------------------------
-int App::run(HINSTANCE inst, int show) {
-    g_app = this;
-    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-    CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-    timeBeginPeriod(1);
-
-    settings_path_ = data_dir() + L"\\settings.ini";
-    settings_.load(settings_path_);
-
-    games_[0].module.reset(create_coi_module());
-    games_[1].module.reset(create_qs_module());
-    games_[2].module.reset(create_woi_module());
-
-    {
-        int argc = 0;
-        LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-        for (int i = 1; i + 2 < argc; i++)
-            if (wcscmp(argv[i], L"--autotest") == 0) {
-                autotest_dir_ = argv[i + 1];
-                autotest_ = load_script(argv[i + 2]);
-                CreateDirectoryW(autotest_dir_.c_str(), nullptr);
-            }
-        for (int i = 1; i + 1 < argc; i++)
-            if (wcscmp(argv[i], L"--capture-size") == 0 && swscanf(argv[i + 1], L"%dx%d", &capture_w_, &capture_h_) != 2)
-                capture_w_ = capture_h_ = 0;
-        LocalFree(argv);
-        if (autotest_) { show = SW_HIDE; settings_.fullscreen = false; settings_.vsync = true; }
-        else capture_w_ = capture_h_ = 0;
-    }
-    if (!create_window(inst, show)) return 1;
-    RECT rc;
-    GetClientRect(hwnd_, &rc);
-    if (!video_.init(hwnd_, rc.right - rc.left, rc.bottom - rc.top)) {
-        MessageBoxW(hwnd_, L"Direct3D 11 could not be initialised.", kWindowTitle, MB_ICONERROR);
-        return 1;
-    }
-    audio_.init(48000);
-    input_.init(hwnd_);
-
-    find_game_roms();
-    apply_settings();
-    if (settings_.fullscreen) set_fullscreen(true);
-    for (int g = 0; g < kGameCount; g++)
-        if (settings_.last_game == games_[g].module->id()) launcher_sel_ = launcher_last_card_ = g;
-
-    // Command line: --game coi|qs starts a game directly.
-    int argc = 0;
-    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-    for (int i = 1; i + 1 < argc; i++) {
-        if (wcscmp(argv[i], L"--game") == 0) {
-            for (int g = 0; g < kGameCount; g++)
-                if (widen(games_[g].module->id()) == argv[i + 1]) launch(g);
-        }
-    }
-    LocalFree(argv);
-
-    LARGE_INTEGER freq, last, now;
-    QueryPerformanceFrequency(&freq);
-    QueryPerformanceCounter(&last);
-    while (running_) {
-        MSG msg;
-        while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
-            if (msg.message == WM_QUIT) running_ = false;
-            TranslateMessage(&msg);
-            DispatchMessageW(&msg);
-        }
-        if (!running_) break;
-        QueryPerformanceCounter(&now);
-        double dt = (double)(now.QuadPart - last.QuadPart) / freq.QuadPart;
-        last = now;
-        if (dt > 0.25) dt = 0.25;
-        if (IsIconic(hwnd_)) {
-            audio_.set_paused(true);
-            Sleep(20);
-            continue;
-        }
-        audio_.set_paused(false);
-        frame(dt);
-        if (!settings_.vsync) {
-            // Software pacing when not synchronised to the display (fast forward too: it runs more game frames
-            // per displayed frame, not more displayed frames).
-            LARGE_INTEGER t;
-            double target = 1.0 / kEmuFps;
-            for (;;) {
-                QueryPerformanceCounter(&t);
-                double el = (double)(t.QuadPart - last.QuadPart) / freq.QuadPart;
-                if (el >= target) break;
-                if (target - el > 0.002) Sleep(1);
-            }
-        }
-    }
-    if (!autotest_) save_settings();
-    stop_recording();
-    jukebox_.close();
-    session_.reset();
-    for (auto& g : games_) g.preview.reset();
-    input_.shutdown();
-    audio_.shutdown();
-    video_.shutdown();
-    timeEndPeriod(1);
-    return 0;
-}
-
-bool App::create_window(HINSTANCE inst, int show) {
-    WNDCLASSEXW wc = {sizeof(wc)};
-    wc.style = CS_HREDRAW | CS_VREDRAW;
-    wc.lpfnWndProc = wnd_thunk;
-    wc.hInstance = inst;
-    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wc.hIcon = LoadIconW(inst, MAKEINTRESOURCEW(1));
-    wc.hIconSm = wc.hIcon;
-    wc.lpszClassName = kWindowClass;
-    wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
-    RegisterClassExW(&wc);
-    int ext = wide_ext(settings_.widescreen);
-    int cw = (320 + ext * 2) * settings_.window_scale, ch = 224 * settings_.window_scale;
-    if (capture_w_ > 0) { cw = capture_w_; ch = capture_h_; }
-    RECT r = {0, 0, cw, ch};
-    AdjustWindowRectEx(&r, WS_OVERLAPPEDWINDOW, FALSE, 0);
-    // Open centred on the chosen display.
-    std::vector<MonitorInfo> mons = enum_monitors();
-    RECT pos = {CW_USEDEFAULT, CW_USEDEFAULT, 0, 0};
-    if (!mons.empty()) {
-        const MonitorInfo& m = mons[find_monitor(mons, widen(settings_.monitor))];
-        pos = centered_rect(m.work, r.right - r.left, r.bottom - r.top);
-        if (capture_w_ > 0) { pos.left = m.work.left; pos.top = m.work.top; }
-    }
-    hwnd_ = CreateWindowExW(0, kWindowClass, kWindowTitle, WS_OVERLAPPEDWINDOW, pos.left, pos.top,
-                            r.right - r.left, r.bottom - r.top, nullptr, nullptr, inst, nullptr);
-    if (!hwnd_) return false;
-    BOOL dark = TRUE;
-    DwmSetWindowAttribute(hwnd_, 20 /*DWMWA_USE_IMMERSIVE_DARK_MODE*/, &dark, sizeof(dark));
-    ShowWindow(hwnd_, show);
-    UpdateWindow(hwnd_);
-    return true;
-}
-
-void App::set_fullscreen(bool fs) {
-    if (fs == is_fullscreen_) return;
-    if (fs) {
-        GetWindowPlacement(hwnd_, &windowed_placement_);
-        MONITORINFO mi = {sizeof(mi)};
-        GetMonitorInfoW(MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST), &mi);
-        SetWindowLongW(hwnd_, GWL_STYLE, WS_POPUP | WS_VISIBLE);
-        SetWindowPos(hwnd_, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left,
-                     mi.rcMonitor.bottom - mi.rcMonitor.top, SWP_FRAMECHANGED | SWP_NOOWNERZORDER);
-        ShowCursor(FALSE);
-    } else {
-        SetWindowLongW(hwnd_, GWL_STYLE, WS_OVERLAPPEDWINDOW | WS_VISIBLE);
-        SetWindowPlacement(hwnd_, &windowed_placement_);
-        SetWindowPos(hwnd_, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
-        ShowCursor(TRUE);
-    }
-    is_fullscreen_ = fs;
-    settings_.fullscreen = fs;
-}
-
-RECT App::centered_rect(const RECT& work, int w, int h) {
-    int ww = work.right - work.left, wh = work.bottom - work.top;
-    w = std::min(w, ww);
-    h = std::min(h, wh);
-    RECT r;
-    r.left = work.left + (ww - w) / 2;
-    r.top = work.top + (wh - h) / 2;
-    r.right = r.left + w;
-    r.bottom = r.top + h;
-    return r;
-}
-
-void App::move_to_monitor(int index) {
-    std::vector<MonitorInfo> mons = enum_monitors();
-    if (index < 0 || index >= (int)mons.size()) return;
-    const MonitorInfo& m = mons[index];
-    if (is_fullscreen_) {
-        SetWindowPos(hwnd_, HWND_TOP, m.rect.left, m.rect.top, m.rect.right - m.rect.left, m.rect.bottom - m.rect.top,
-                     SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
-        // Leaving fullscreen later should land on this display too.
-        RECT wr = windowed_placement_.rcNormalPosition;
-        windowed_placement_.rcNormalPosition = centered_rect(m.work, wr.right - wr.left, wr.bottom - wr.top);
-        windowed_placement_.showCmd = SW_SHOWNORMAL;
-    } else {
-        if (IsZoomed(hwnd_)) ShowWindow(hwnd_, SW_RESTORE);
-        RECT wr;
-        GetWindowRect(hwnd_, &wr);
-        RECT c = centered_rect(m.work, wr.right - wr.left, wr.bottom - wr.top);
-        SetWindowPos(hwnd_, nullptr, c.left, c.top, c.right - c.left, c.bottom - c.top, SWP_NOZORDER | SWP_NOOWNERZORDER);
-    }
-    remember_monitor();
-}
-
-void App::remember_monitor() {
-    MONITORINFOEXW mi;
-    mi.cbSize = sizeof(mi);
-    if (GetMonitorInfoW(MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST), &mi)) {
-        settings_.monitor.clear();
-        for (const wchar_t* p = mi.szDevice; *p; p++) settings_.monitor += (char)*p;   // plain ASCII names
-    }
-}
-
-void App::resize_window_to_scale() {
-    if (is_fullscreen_ || capture_w_ > 0) return;
-    int ext = wide_ext(settings_.widescreen);
-    int cw = (320 + ext * 2) * settings_.window_scale, ch = 224 * settings_.window_scale;
-    RECT r = {0, 0, cw, ch};
-    AdjustWindowRectEx(&r, WS_OVERLAPPEDWINDOW, FALSE, 0);
-    SetWindowPos(hwnd_, nullptr, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER);
-}
+// The platform-independent part of the app: frame loop body, input handling, game control, saves.
+// Window, main loop and test recording: app_win.cpp (Windows), app_android.cpp (Android).
 
 static Settings preview_settings(const Settings& s) {
     Settings p = s;
@@ -282,66 +36,6 @@ void App::save_settings() { if (!autotest_) settings_.save(settings_path_); }
 uint32_t App::accent() const {
     if (mode_ == Mode::Playing && current_ >= 0) return games_[current_].module->accent_color();
     return launcher_sel_ < kGameCount ? games_[launcher_sel_].module->accent_color() : 0xFFE8B84A;
-}
-
-// ---------------------------------------------------------------------------
-// Window procedure
-// ---------------------------------------------------------------------------
-LRESULT App::wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
-    switch (msg) {
-    case WM_CLOSE:
-        running_ = false;
-        return 0;
-    case WM_DESTROY:
-        PostQuitMessage(0);
-        return 0;
-    case WM_SIZE:
-        if (wp != SIZE_MINIMIZED && video_.width() > 0) video_.resize(LOWORD(lp), HIWORD(lp));
-        return 0;
-    // Losing focus releases all keys (no stuck keys); the hidden autotest window injects its keys and
-    // never has focus, so it keeps them.
-    case WM_ACTIVATEAPP:
-        active_window_ = wp != 0;
-        if (!active_window_ && !autotest_) input_.on_focus_lost();
-        return 0;
-    case WM_KILLFOCUS:
-        if (!autotest_) input_.on_focus_lost();
-        return 0;
-    case WM_DEVICECHANGE:
-        input_.on_device_change();
-        return TRUE;
-    case WM_KEYDOWN:
-    case WM_SYSKEYDOWN:
-        if (msg == WM_SYSKEYDOWN && wp == VK_RETURN && !(lp & (1 << 30))) {
-            settings_.fullscreen = !is_fullscreen_;
-            set_fullscreen(settings_.fullscreen);
-            return 0;
-        }
-        if (msg == WM_SYSKEYDOWN && wp == VK_F4) break;
-        input_.on_key((int)wp, true);
-        return 0;
-    case WM_KEYUP:
-    case WM_SYSKEYUP:
-        input_.on_key((int)wp, false);
-        return 0;
-    case WM_SYSCHAR:
-    case WM_MENUCHAR:
-        return msg == WM_MENUCHAR ? MAKELRESULT(0, MNC_CLOSE) : 0;
-    case WM_SYSCOMMAND:
-        if ((wp & 0xFFF0) == SC_KEYMENU) return 0;   // no beep/menu on Alt
-        break;
-    case WM_EXITSIZEMOVE:
-        remember_monitor();   // dragging the window to another display selects that display
-        return 0;
-    case WM_GETMINMAXINFO: {
-        MINMAXINFO* mm = (MINMAXINFO*)lp;
-        mm->ptMinTrackSize.x = 480;
-        mm->ptMinTrackSize.y = 300;
-        return 0;
-    }
-    default: break;
-    }
-    return DefWindowProcW(h, msg, wp, lp);
 }
 
 // ---------------------------------------------------------------------------
@@ -382,6 +76,11 @@ UiInput App::poll_ui(float dt) {
     if (input_.key_pressed(VK_PRIOR)) u.page_left = true;
     if (input_.key_pressed(VK_NEXT)) u.page_right = true;
     u.key_pressed = input_.last_key_pressed();
+#ifdef __ANDROID__
+    if (touch_.take_tap(u.tap_x, u.tap_y)) u.tap = true;
+    u.drag = touch_.take_drag();
+    if (touch_.take_pressed(TouchControls::BtnMenu)) u.menu = true;
+#endif
     return u;
 }
 
@@ -405,6 +104,9 @@ uint16_t App::pad_state(int p) {
             if (ps.buttons & PAD_LS_RIGHT) s |= MD_RIGHT;
         }
     }
+#ifdef __ANDROID__
+    if (p == 0) s |= touch_.md_buttons();
+#endif
     if ((s & (MD_UP | MD_DOWN)) == (MD_UP | MD_DOWN)) s &= ~(MD_UP | MD_DOWN);
     if ((s & (MD_LEFT | MD_RIGHT)) == (MD_LEFT | MD_RIGHT)) s &= ~(MD_LEFT | MD_RIGHT);
     return s;
@@ -457,16 +159,35 @@ void App::frame(double dt) {
     if (input_.key_pressed(VK_F11)) { settings_.fullscreen = !is_fullscreen_; set_fullscreen(settings_.fullscreen); }
     if (input_.key_pressed(VK_F12)) screenshot();
     const bool in_play = mode_ == Mode::Playing && session_ && !menu_.active() && !jukebox_.active();
-    rewinding_ = in_play && settings_.rewind && hold_hotkey('R', PAD_LT);
-    fast_forward_ = in_play && !rewinding_ && settings_.fast_forward && hold_hotkey(VK_TAB, PAD_RT);
+    bool rewind_held = hold_hotkey('R', PAD_LT), ff_held = hold_hotkey(VK_TAB, PAD_RT);
+#ifdef __ANDROID__
+    rewind_held = rewind_held || touch_.held(TouchControls::BtnRewind);
+    ff_held = ff_held || touch_.held(TouchControls::BtnFF);
+    touch_.in_game = in_play;
+    touch_.show_ff = settings_.fast_forward;
+    touch_.show_rewind = settings_.rewind;
+    touch_.layout((float)video_.width(), (float)video_.height());
+    menu_.touch_ui = jukebox_.touch_ui = touch_active_;
+    if (touch_active_) menu_.footer = "Tap an item to choose    Drag to scroll    Back to return";
+    if (picking_roms_) poll_pick();
+#endif
+    rewinding_ = in_play && settings_.rewind && rewind_held;
+    fast_forward_ = in_play && !rewinding_ && settings_.fast_forward && ff_held;
     if (!rewinding_) rewind_acc_ = 1.0;   // the first rewind step comes at once
 
     // How many emulated frames this display frame: lock-step with a ~60 Hz vsync'd display,
     // otherwise accumulate real time.
     int frames;
-    double refresh = display_refresh(hwnd_);
-    if (settings_.vsync && !fast_forward_ && std::fabs(refresh - kEmuFps) < 1.0) {
-        frames = 1;
+    double refresh = refresh_rate();
+#ifdef __ANDROID__
+    // Phones often run at 120 Hz: there each game frame is shown for exactly two refreshes (refresh_rate() is
+    // measured there, so a phone that drops to 60 Hz or 90 Hz is followed).
+    const int per = std::max(1, (int)std::lround(refresh / kEmuFps));
+#else
+    const int per = 1;
+#endif
+    if (settings_.vsync && !fast_forward_ && std::fabs(refresh - per * kEmuFps) < per * 1.0) {
+        frames = ++vsync_phase_ % per == 0 ? 1 : 0;
         frame_acc_ = 0;
     } else {
         // Fast forward runs at 4x real time, whatever the display's refresh rate.
@@ -544,6 +265,10 @@ void App::frame(double dt) {
         jukebox_.draw(video_, (float)time_, jukebox_.module()->accent_color());
     } else if (mode_ == Mode::Playing && session_) {
         draw_game_view(0, *session_, {0, 0, W, H}, 1.0f, 0.0f);
+#ifdef __ANDROID__
+        if (!menu_.active() && settings_.touch_mode != 2)
+            touch_.draw(video_, settings_.touch_opacity / 100.0f, settings_.fast_forward, settings_.rewind);
+#endif
     } else {
         draw_launcher();
     }
@@ -564,40 +289,20 @@ void App::frame(double dt) {
     if (!pending_shot_.empty()) {
         std::vector<uint32_t> px;
         int w, h;
-        if (video_.capture(px, w, h)) write_png(autotest_dir_ + L"\\" + widen(pending_shot_) + L".png", px.data(), w, h);
+        if (video_.capture(px, w, h)) write_png(path_join(autotest_dir_, from_utf8(pending_shot_) + L".png"), px.data(), w, h);
         pending_shot_.clear();
     }
-    if (recording_) {
-        std::vector<uint32_t> px;
-        int w, h;
-        if (rec_frames_ == 0 && video_.capture(px, w, h) && !start_ffmpeg(w, h))
-            rec_vid_ = _wfopen((rec_name_ + L".vid").c_str(), L"wb");
-        if ((rec_pipe_ || rec_vid_) && (!px.empty() || video_.capture(px, w, h)) && (rec_frames_ == 0 || (w == rec_w_ && h == rec_h_))) {
-            rec_w_ = w; rec_h_ = h;
-            if (rec_pipe_) {
-                DWORD n = 0;
-                WriteFile(rec_pipe_, px.data(), (DWORD)(px.size() * 4), &n, nullptr);
-            } else {
-                fwrite(px.data(), 4, px.size(), rec_vid_);
-            }
-            // Audio as produced; silence where nothing played (menus, pauses) so it stays in step with the frames.
-            fwrite(audio_buf_.data(), 2, audio_buf_.size(), rec_pcm_);
-            rec_frames_++;
-            rec_samples_ += audio_buf_.size() / 2;
-            const uint64_t due = (uint64_t)(rec_frames_ * 48000.0 / kEmuFps);
-            if (rec_samples_ + 801 < due) {
-                std::vector<int16_t> z((size_t)(due - rec_samples_) * 2, 0);
-                fwrite(z.data(), 2, z.size(), rec_pcm_);
-                rec_samples_ = due;
-            }
-        }
-    }
+    if (recording_) record_frame();
+#ifdef __ANDROID__
+    work_end_ = SDL_GetPerformanceCounter();   // the frame's work, before the wait for the display (perf log)
+#endif
     video_.end_frame();
 }
 
 bool App::load_script(const std::wstring& path) {
-    std::ifstream f(path);
-    if (!f) return false;
+    std::string text;
+    if (!read_text(path, text)) return false;
+    std::istringstream f(text);
     std::string line;
     while (std::getline(f, line)) {
         if (line.empty() || line[0] == '#') continue;
@@ -639,26 +344,23 @@ void App::run_script() {
         case 2: pending_shot_ = s.arg; break;
         case 4: autotest_realtime_ = s.arg != "0"; break;
         case 5: {
-            std::ofstream m(autotest_dir_ + L"\\marks.txt", std::ios::app);
+            std::ostringstream m;
             double t = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
             uint32_t ram_hash = 2166136261u;   // FNV-1a of 68000 RAM, to check a replay against the bot's run
             if (session_) for (uint8_t b : session_->md().ram) ram_hash = (ram_hash ^ b) * 16777619u;
             m << s.arg << " " << std::fixed << t << " loop " << loop_frame_ << " runs " << stat_runs_ << " pops " << stat_pops_
               << " ram " << std::hex << ram_hash << std::dec << "\n";
+            if (FILE* f = open_file(path_join(autotest_dir_, L"marks.txt"), "ab")) {
+                fputs(m.str().c_str(), f);
+                fclose(f);
+            }
             break;
         }
-        case 6: {
-            stop_recording();
-            rec_name_ = autotest_dir_ + L"\\" + widen(s.arg);
-            rec_pcm_ = _wfopen((rec_name_ + L".pcm").c_str(), L"wb");
-            recording_ = rec_pcm_ != nullptr;
-            rec_frames_ = 0; rec_samples_ = 0;
-            break;
-        }
+        case 6: start_recording(s.arg); break;
         case 7: stop_recording(); break;
         case 8: {
-            std::ifstream f(autotest_dir_ + L"\\" + widen(s.arg) + L".state", std::ios::binary);
-            std::vector<uint8_t> d((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+            std::vector<uint8_t> d;
+            read_file(path_join(autotest_dir_, from_utf8(s.arg) + L".state"), d);
             if (session_ && !d.empty() && session_->load_state(d)) { rewind_.clear(); frame_acc_ = 0; }
             break;
         }
@@ -676,8 +378,8 @@ void App::run_script() {
             break;
         }
         case 9: {
-            std::ifstream f(autotest_dir_ + L"\\" + widen(s.arg) + L".pads", std::ios::binary);
-            std::vector<uint8_t> d((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+            std::vector<uint8_t> d;
+            read_file(path_join(autotest_dir_, from_utf8(s.arg) + L".pads"), d);
             pad_stream_.assign(d.size() / 4, 0);
             if (!pad_stream_.empty()) memcpy(pad_stream_.data(), d.data(), pad_stream_.size() * 4);
             pad_pos_ = 0;
@@ -686,48 +388,6 @@ void App::run_script() {
         default: running_ = false; break;
         }
     }
-}
-
-// Trailer recording: frames are piped to a hidden ffmpeg (lossless H.264 in <name>.mkv) if it is on the PATH.
-bool App::start_ffmpeg(int w, int h) {
-    wchar_t exe[MAX_PATH];
-    if (!SearchPathW(nullptr, L"ffmpeg.exe", nullptr, MAX_PATH, exe, nullptr)) return false;
-    SECURITY_ATTRIBUTES sa = {sizeof(sa), nullptr, TRUE};
-    HANDLE rd = nullptr, wr = nullptr;
-    if (!CreatePipe(&rd, &wr, &sa, 1 << 22)) return false;
-    SetHandleInformation(wr, HANDLE_FLAG_INHERIT, 0);
-    wchar_t fps[32];
-    swprintf(fps, 32, L"%.6f", kEmuFps);
-    std::wstring cmd = L"\"" + std::wstring(exe) + L"\" -loglevel error -y -f rawvideo -pix_fmt bgra -video_size " +
-                       std::to_wstring(w) + L"x" + std::to_wstring(h) + L" -framerate " + fps +
-                       L" -i - -c:v libx264 -preset ultrafast -qp 0 -pix_fmt yuv444p \"" + rec_name_ + L".mkv\"";
-    STARTUPINFOW si = {sizeof(si)};
-    si.dwFlags = STARTF_USESTDHANDLES;
-    si.hStdInput = rd;
-    si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
-    si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
-    PROCESS_INFORMATION pi = {};
-    BOOL ok = CreateProcessW(nullptr, &cmd[0], nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
-    CloseHandle(rd);
-    if (!ok) { CloseHandle(wr); return false; }
-    CloseHandle(pi.hThread);
-    rec_pipe_ = wr;
-    rec_proc_ = pi.hProcess;
-    return true;
-}
-
-// Closes the trailer recording and writes <name>.txt: width height frames fps.
-void App::stop_recording() {
-    if (!recording_) return;
-    if (rec_pipe_) CloseHandle(rec_pipe_);
-    if (rec_proc_) { WaitForSingleObject(rec_proc_, 120000); CloseHandle(rec_proc_); }
-    if (rec_vid_) fclose(rec_vid_);
-    if (rec_pcm_) fclose(rec_pcm_);
-    std::ofstream info(rec_name_ + L".txt");
-    info << rec_w_ << " " << rec_h_ << " " << rec_frames_ << " " << kEmuFps << "\n";
-    rec_pipe_ = rec_proc_ = nullptr;
-    rec_vid_ = rec_pcm_ = nullptr;
-    recording_ = false;
 }
 
 void App::run_game_frames(int count, bool with_audio) {
@@ -841,17 +501,15 @@ void App::back_to_launcher() {
 }
 
 std::wstring App::save_path(int slot) {
-    std::wstring dir = data_dir() + L"\\saves";
-    CreateDirectoryW(dir.c_str(), nullptr);
-    return dir + L"\\" + widen(games_[current_].module->id()) + L"_slot" + std::to_wstring(slot) + L".state";
+    std::wstring dir = path_join(data_dir(), L"saves");
+    make_dir(dir);
+    return path_join(dir, from_utf8(games_[current_].module->id()) + L"_slot" + std::to_wstring(slot) + L".state");
 }
 
 void App::quick_save() {
     if (!session_) return;
     std::vector<uint8_t> st = session_->save_state();
-    std::ofstream f(save_path(state_slot_), std::ios::binary | std::ios::trunc);
-    if (f) {
-        f.write((const char*)st.data(), (std::streamsize)st.size());
+    if (write_file(save_path(state_slot_), st.data(), st.size())) {
         menu_.toast("State saved to slot " + std::to_string(state_slot_));
     } else {
         menu_.toast("Could not write save state");
@@ -860,9 +518,8 @@ void App::quick_save() {
 
 void App::quick_load() {
     if (!session_) return;
-    std::ifstream f(save_path(state_slot_), std::ios::binary);
-    if (!f) { menu_.toast("Slot " + std::to_string(state_slot_) + " is empty"); return; }
-    std::vector<uint8_t> st((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    std::vector<uint8_t> st;
+    if (!read_file(save_path(state_slot_), st)) { menu_.toast("Slot " + std::to_string(state_slot_) + " is empty"); return; }
     if (session_->load_state(st)) {
         rewind_.clear();
         menu_.toast("State loaded from slot " + std::to_string(state_slot_));
@@ -876,12 +533,16 @@ void App::screenshot() {
     if (!s) return;
     int w, h;
     const uint32_t* px = s->frame(w, h);
-    std::wstring dir = data_dir() + L"\\screenshots";
-    CreateDirectoryW(dir.c_str(), nullptr);
+    std::wstring dir = path_join(data_dir(), L"screenshots");
+    make_dir(dir);
     time_t t = time(nullptr);
     tm lt;
+#ifdef _WIN32
     localtime_s(&lt, &t);
-    wchar_t name[64];
-    swprintf(name, 64, L"\\%04d%02d%02d_%02d%02d%02d.png", lt.tm_year + 1900, lt.tm_mon + 1, lt.tm_mday, lt.tm_hour, lt.tm_min, lt.tm_sec);
-    menu_.toast(write_png(dir + name, px, w, h) ? "Screenshot saved" : "Could not write screenshot");
+#else
+    localtime_r(&t, &lt);
+#endif
+    char name[64];
+    snprintf(name, sizeof(name), "%04d%02d%02d_%02d%02d%02d.png", lt.tm_year + 1900, lt.tm_mon + 1, lt.tm_mday, lt.tm_hour, lt.tm_min, lt.tm_sec);
+    menu_.toast(write_png(path_join(dir, from_utf8(name)), px, w, h) ? "Screenshot saved" : "Could not write screenshot");
 }

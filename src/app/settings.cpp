@@ -1,12 +1,12 @@
 #include "settings.h"
 #include "../platform/input.h"
+#include "../platform/keys.h"
+#include "sys.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <fstream>
 #include <sstream>
 #include <vector>
-#include <windows.h>
 
 static const char* kActionKeys[ACT_COUNT] = {"up", "down", "left", "right", "a", "b", "c", "start"};
 
@@ -90,8 +90,9 @@ int clampi(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
 }
 
 bool Settings::load(const std::wstring& path) {
-    std::ifstream f(path);
-    if (!f) return false;
+    std::string text;
+    if (!read_text(path, text)) return false;
+    std::istringstream f(text);
     std::string line, section;
     while (std::getline(f, line)) {
         line = trim(line);
@@ -132,6 +133,9 @@ bool Settings::load(const std::wstring& path) {
             else if (k == "stick_as_dpad" && p == 0) stick_as_dpad = iv != 0;
         } else if (section.rfind("cheats.", 0) == 0) {
             cheats[section.substr(7)][k] = iv != 0;
+        } else if (section == "touch") {
+            if (k == "mode") touch_mode = clampi(iv, 0, 2);
+            else if (k == "opacity") touch_opacity = clampi(iv, 10, 100);
         } else if (section == "general") {
             if (k == "last_game") last_game = v;
             else if (k == "fast_forward") fast_forward = iv != 0;
@@ -163,8 +167,9 @@ bool Settings::save(const std::wstring& path) const {
         for (auto& c : g.second) o << c.first << "=" << c.second << "\n";
     }
     o << "\n[general]\nlast_game=" << last_game << "\nfast_forward=" << fast_forward << "\nrewind=" << rewind << "\n";
-    std::ofstream f(path, std::ios::trunc);
-    if (!f) return false;
-    f << o.str();
-    return true;
+#ifdef __ANDROID__
+    o << "\n[touch]\nmode=" << touch_mode << "\nopacity=" << touch_opacity << "\n";
+#endif
+    const std::string s = o.str();
+    return write_file(path, s.data(), s.size());
 }

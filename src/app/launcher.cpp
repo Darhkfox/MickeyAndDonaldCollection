@@ -5,14 +5,14 @@
 #include <cstdio>
 
 namespace {
-std::string narrow(const std::wstring& w) {
-    int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-    std::string s(n, 0);
-    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, nullptr, nullptr);
-    return s;
-}
+std::string narrow(const std::wstring& w) { return to_utf8(w); }
 const int kButtonCount = 4;
+#ifdef __ANDROID__
+// Android apps don't quit from a menu (Back on the launcher still offers it); ROMs come in through the picker.
+const char* kButtons[kButtonCount] = {"Options", "Music Player", "Credits", "Add ROMs"};
+#else
 const char* kButtons[kButtonCount] = {"Options", "Music Player", "Credits", "Quit"};
+#endif
 
 // Shortens a file name to `max_w` by cutting the end of its stem ("World of Illusion Starring Mickey<...>.bin").
 std::string elide_name(Video& v, FontId font, const std::string& name, float max_w, float scale) {
@@ -39,7 +39,14 @@ void App::update_launcher(const UiInput& ui, double dt) {
     if (ui.right && s != N - 1 && s != N + kButtonCount - 1) s++;
     if (ui.down && s < N) s = N + 1;
     if (ui.up && s >= N) s = launcher_last_card_;
-    if (ui.confirm) {
+    bool go = ui.confirm;
+    if (ui.tap)   // touch: a card or button is chosen and used at once
+        for (int i = 0; i < N + kButtonCount; i++) {
+            const Rect& r = launcher_hit_[i];
+            if (ui.tap_x >= r.x && ui.tap_x < r.x + r.w && ui.tap_y >= r.y && ui.tap_y < r.y + r.h) { s = i; go = true; }
+        }
+    if (s < N) launcher_last_card_ = s;
+    if (go) {
         if (s < N) launch(s);
         else if (s == N) open_options_menu(true);
         else if (s == N + 1) {
@@ -51,7 +58,11 @@ void App::update_launcher(const UiInput& ui, double dt) {
             if (g >= 0) open_jukebox(g, false);
             else menu_.toast("No ROMs found");
         } else if (s == N + 2) open_credits(true);
+#ifdef __ANDROID__
+        else pick_roms();
+#else
         else running_ = false;
+#endif
     }
     if (ui.menu || ui.back) menu_.confirm("Quit?", [this]() { running_ = false; });
     for (int i = 0; i < N + kButtonCount; i++) {
@@ -78,8 +89,13 @@ void App::draw_launcher() {
     tscale = std::min(tscale, 0.8f);
     video_.draw_text(FontId::Huge, W * 0.5f, ty0, "Mickey & Donald Collection", 0xFFF6F1E4, Align::Center, tscale);
     ty0 += video_.line_height(FontId::Huge, tscale);
+#ifdef __ANDROID__
+    const char* edition = "Android Edition";
+#else
+    const char* edition = "PC Edition";
+#endif
     video_.draw_text(FontId::Body, W * 0.5f, ty0,
-                     std::string("Sega Mega Drive / Genesis classics  \xE2\x80\xA2  PC Edition  \xE2\x80\xA2  v") + kAppVersion,
+                     std::string("Sega Mega Drive / Genesis classics  \xE2\x80\xA2  ") + edition + "  \xE2\x80\xA2  v" + kAppVersion,
                      0xFF9AA4BA, Align::Center);
     ty0 += video_.line_height(FontId::Body);
 
@@ -111,6 +127,7 @@ void App::draw_launcher() {
         float sc = 1.0f + 0.035f * an;
         float cx = x0 + i * (cw + gap) + cw * 0.5f, cy = top + ch * 0.5f;
         Rect r = {cx - cw * sc * 0.5f, cy - ch * sc * 0.5f, cw * sc, ch * sc};
+        launcher_hit_[i] = r;
         uint32_t c = g.module->accent_color();
         float rad = H * 0.02f;
         if (an > 0.01f) {
@@ -134,8 +151,13 @@ void App::draw_launcher() {
                 lines.push_back("is " + g.rom.other_desc + ".");
                 lines.push_back(std::string("Needs ") + g.module->rom_hint());
             } else {
+#ifdef __ANDROID__
+                lines.push_back("Tap Add ROMs and choose");
+                lines.push_back(g.module->rom_hint());
+#else
                 lines.push_back(std::string("Place ") + g.module->rom_hint());
                 lines.push_back("in the game folder or a \"roms\" folder");
+#endif
             }
             lines.push_back(crc);
             float bw = 1.0f;
@@ -185,12 +207,18 @@ void App::draw_launcher() {
     for (int i = 0; i < kButtonCount; i++) {
         float an = launcher_anim_[N + i];
         Rect br = {bx, by, bws[i], bh};
+        launcher_hit_[N + i] = br;
         video_.fill_round_rect(br, bh * 0.5f, lerp_color(0xFF1C2230, acc, an * 0.85f));
         video_.draw_text(FontId::Body, br.x + br.w * 0.5f, br.y + (bh - video_.line_height(FontId::Body)) * 0.5f, kButtons[i],
                          an > 0.5f ? 0xFF10131A : 0xFFD8DDE8, Align::Center);
         bx += bws[i] + bgap;
     }
-    video_.draw_text(FontId::Small, W * 0.5f, H - video_.line_height(FontId::Small) * 1.6f,
-                     "\xE2\x86\x90\xE2\x86\x92 Choose    Enter / (A) Play    F11 Fullscreen    Esc Quit",
+#ifdef __ANDROID__
+    const char* hint = touch_active_ ? "Tap a game to play    Add ROMs to choose your ROM files"
+                                     : "\xE2\x86\x90\xE2\x86\x92 Choose    (A) Play    Back Quit";
+#else
+    const char* hint = "\xE2\x86\x90\xE2\x86\x92 Choose    Enter / (A) Play    F11 Fullscreen    Esc Quit";
+#endif
+    video_.draw_text(FontId::Small, W * 0.5f, H - video_.line_height(FontId::Small) * 1.6f, hint,
                      with_alpha(0xFF6C7488, 1.0f - menu_.toast_cover()), Align::Center);
 }

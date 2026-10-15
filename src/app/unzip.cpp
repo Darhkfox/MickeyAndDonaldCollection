@@ -1,7 +1,7 @@
 #include "unzip.h"
 #include "romfind.h"
 #include <algorithm>
-#include <fstream>
+#include <cstring>
 
 // ---------------------------------------------------------------------------
 // Inflate (after Mark Adler's puff.c: canonical Huffman decoding a bit at a time, which is plenty
@@ -201,16 +201,15 @@ bool inflate_raw(const uint8_t* in, size_t n, std::vector<uint8_t>& out, size_t 
 // ---------------------------------------------------------------------------
 bool zip_list(const std::wstring& path, std::vector<ZipEntry>& out) {
     out.clear();
-    std::ifstream f(path, std::ios::binary);
+    struct Closer { FILE* f; ~Closer() { if (f) fclose(f); } } file{open_file(path, "rb")};
+    FILE* f = file.f;
     if (!f) return false;
-    f.seekg(0, std::ios::end);
-    const uint64_t fsize = (uint64_t)f.tellg();
+    const uint64_t fsize = file_size(f);
     if (fsize < 22) return false;
     // End of central directory record: within the last 64 KB + 22 bytes (it can be followed by a comment).
     const size_t tail = (size_t)std::min<uint64_t>(fsize, 65557);
     std::vector<uint8_t> t(tail);
-    f.seekg((std::streamoff)(fsize - tail));
-    if (!f.read((char*)t.data(), tail)) return false;
+    if (!file_seek(f, fsize - tail) || fread(t.data(), 1, tail, f) != tail) return false;
     size_t eocd = SIZE_MAX;
     for (size_t i = tail - 22 + 1; i-- > 0;)
         if (rd32(&t[i]) == 0x06054B50) { eocd = i; break; }
@@ -219,8 +218,7 @@ bool zip_list(const std::wstring& path, std::vector<ZipEntry>& out) {
     const uint32_t cd_size = rd32(&t[eocd + 12]), cd_off = rd32(&t[eocd + 16]);
     if (cd_off == 0xFFFFFFFF || (uint64_t)cd_off + cd_size > fsize || cd_size > (16u << 20)) return false;
     std::vector<uint8_t> cd(cd_size);
-    f.seekg(cd_off);
-    if (cd_size && !f.read((char*)cd.data(), cd_size)) return false;
+    if (!file_seek(f, cd_off) || (cd_size && fread(cd.data(), 1, cd_size, f) != cd_size)) return false;
     size_t p = 0;
     for (unsigned k = 0; k < count && p + 46 <= cd.size(); k++) {
         if (rd32(&cd[p]) != 0x02014B50) return false;
@@ -244,14 +242,14 @@ bool zip_read(const std::wstring& path, const ZipEntry& e, std::vector<uint8_t>&
     out.clear();
     if ((e.flags & 1) || e.size > kMaxEntry || e.comp_size > kMaxEntry) return false;   // encrypted / too big
     if (e.method != 0 && e.method != 8) return false;
-    std::ifstream f(path, std::ios::binary);
+    struct Closer { FILE* f; ~Closer() { if (f) fclose(f); } } file{open_file(path, "rb")};
+    FILE* f = file.f;
     if (!f) return false;
     uint8_t lh[30];
-    f.seekg(e.local_offset);
-    if (!f.read((char*)lh, 30) || rd32(lh) != 0x04034B50) return false;
-    f.seekg((std::streamoff)e.local_offset + 30 + rd16(&lh[26]) + rd16(&lh[28]));
+    if (!file_seek(f, e.local_offset) || fread(lh, 1, 30, f) != 30 || rd32(lh) != 0x04034B50) return false;
+    if (!file_seek(f, (uint64_t)e.local_offset + 30 + rd16(&lh[26]) + rd16(&lh[28]))) return false;
     std::vector<uint8_t> comp(e.comp_size);
-    if (e.comp_size && !f.read((char*)comp.data(), e.comp_size)) return false;
+    if (e.comp_size && fread(comp.data(), 1, e.comp_size, f) != e.comp_size) return false;
     if (e.method == 0) {
         if (e.comp_size != e.size) return false;
         out = std::move(comp);

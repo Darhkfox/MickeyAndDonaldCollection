@@ -34,6 +34,7 @@ tests/tests/
 trailer_work/
 *.png
 !res/*.png
+!android/app/src/main/res/**/*.png
 *.npz
 *.npy
 *.wav
@@ -55,3 +56,16 @@ __pycache__/
 *.pyc
 Thumbs.db
 desktop.ini
+
+# Android: build output, local SDK path, signing (the keystore and its passwords stay local), SDL2 source
+# (fetched by android/fetch_sdl.ps1)
+android/.gradle/
+android/build/
+android/app/build/
+android/app/.cxx/
+android/local.properties
+android/keystore.properties
+*.jks
+*.keystore
+*.apk
+third_party/SDL2-*-src/

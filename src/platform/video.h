@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-struct HWND__; typedef HWND__* HWND;
+#include "native.h"
 
 enum class ScaleFilter : int {
     Nearest = 0,     // crisp pixels
@@ -26,7 +26,7 @@ public:
     Video();
     ~Video();
 
-    bool init(HWND hwnd, int width, int height);
+    bool init(NativeWindow window, int width, int height);
     void shutdown();
     void resize(int width, int height);           // call on WM_SIZE
     int  width() const;

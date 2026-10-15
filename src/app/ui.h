@@ -13,6 +13,9 @@ struct UiInput {
     bool page_left = false, page_right = false;
     int  key_pressed = 0;          // raw VK pressed this frame (for rebinding)
     uint32_t pad_pressed = 0;      // normalised pad buttons pressed this frame
+    bool tap = false;              // touch screens: a tap at tap_x / tap_y (backbuffer pixels)
+    float tap_x = 0, tap_y = 0;
+    float drag = 0;                // vertical finger movement since the last frame (pixels)
 };
 
 struct MenuItem {
@@ -52,6 +55,7 @@ struct MenuPage {
     std::function<void()> on_back;     // called when the page is popped with Back
     std::function<void()> on_frame;    // called every frame while on top (live refresh)
     bool wide = false;                 // use a wider panel (long lists)
+    bool free_scroll = false;          // touch: the list was dragged, so it doesn't follow the selection
 };
 
 class Menu {
@@ -70,6 +74,7 @@ public:
 
     uint32_t accent = 0xFFE8B84A;
     std::string footer;                // controls help line
+    bool touch_ui = false;             // touch screens: a Back button on the panel, taps and drags act on rows
     bool capturing() const { return capture_; }
 
     void toast(const std::string& msg, float seconds = 2.2f);
@@ -86,6 +91,10 @@ private:
     float capture_block_ = 0;
     struct Toast { std::string text; float t; float life; };
     std::vector<Toast> toasts_;
+    // where the last draw put things, for taps
+    Rect panel_ = {}, back_btn_ = {};
+    float list_top_ = 0, list_bottom_ = 0, row_ = 0;
+    bool touch(MenuPage& p, const UiInput& in);
     void fix_selection(MenuPage& p);
     void move(MenuPage& p, int dir);
 };

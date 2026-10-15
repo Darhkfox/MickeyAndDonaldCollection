@@ -57,6 +57,10 @@ struct Settings {
     bool        fast_forward = true;
     bool        rewind = true;
 
+    // Touch screens (Android): on-screen pad 0 = when the screen is touched, 1 = always, 2 = never; opacity %
+    int         touch_mode = 0;
+    int         touch_opacity = 55;
+
     // Cheats per game: game id -> cheat key -> enabled
     std::map<std::string, std::map<std::string, bool>> cheats;
 

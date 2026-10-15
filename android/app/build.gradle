@@ -1,0 +1,67 @@
+plugins {
+    id 'com.android.application'
+}
+
+// release signing: android/keystore.properties + its keystore (kept out of git)
+def keystoreProps = new Properties()
+def keystoreFile = rootProject.file('keystore.properties')
+if (keystoreFile.exists()) keystoreFile.withInputStream { keystoreProps.load(it) }
+
+android {
+    namespace 'com.darhkfox.mickeydonald'
+    compileSdk 34
+    ndkVersion '28.2.13676358'
+
+    defaultConfig {
+        applicationId 'com.darhkfox.mickeydonald'
+        minSdk 23
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+        ndk {
+            // phones (64-bit ARM) and the x86_64 emulator
+            abiFilters 'arm64-v8a', 'x86_64'
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path 'src/main/cpp/CMakeLists.txt'
+            version '3.31.6'
+        }
+    }
+
+    sourceSets {
+        main {
+            // SDL's Java side (SDLActivity and friends) straight from its source
+            java.srcDirs = ['src/main/java', '../../third_party/SDL2-2.32.10-src/android-project/app/src/main/java']
+        }
+    }
+
+    signingConfigs {
+        if (keystoreFile.exists()) {
+            release {
+                storeFile rootProject.file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (keystoreFile.exists()) signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    lint {
+        abortOnError false
+    }
+}

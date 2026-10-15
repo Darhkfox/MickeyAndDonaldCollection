@@ -1,6 +1,8 @@
 // Application: window, main loop, launcher, in-game menus, music player.
 #pragma once
+#ifdef _WIN32
 #include <windows.h>
+#endif
 #include <cstdint>
 #include <cstdio>
 #include <memory>
@@ -9,15 +11,22 @@
 #include "../platform/video.h"
 #include "../platform/audio.h"
 #include "../platform/input.h"
+#include "../platform/keys.h"
 #include "../game/game.h"
 #include "settings.h"
 #include "session.h"
 #include "romfind.h"
 #include "ui.h"
+#ifdef _WIN32
 #include "monitors.h"
+#endif
 #include "rewind.h"
+#ifdef __ANDROID__
+#include "touch.h"
+#endif
 
 constexpr const char* kAppVersion = "1.0";   // shown in the launcher, the window title and Credits
+constexpr double kEmuFps = 53693175.0 / (3420.0 * 262.0);   // 59.9227 Hz
 
 struct GameSlot {
     std::unique_ptr<GameModule> module;
@@ -35,6 +44,7 @@ public:
     void mix_audio(std::vector<int16_t>& out, double adjust);
     void draw(Video& v, float time, uint32_t accent);
     float hint_fade_ = 0.0f;              // set by the app: a toast covers the key hints
+    bool touch_ui = false;                // touch screens: help text for taps
     void apply_settings(const Settings& s) { if (session_) session_->apply_settings(s); }
     bool wants_close() const { return close_requested_; }
     int  game_switch() const { return switch_dir_; }
@@ -57,24 +67,35 @@ private:
     float vu_[10] = {};
     float peak_[10] = {};
     bool paused_ = false;
+    Rect list_rect_ = {}, switch_rect_ = {};   // where the last draw put the track list / game switch, for taps
+    float row_ = 0, list_y0_ = 0;
+    bool free_scroll_ = false;           // touch: the list was dragged, so it doesn't follow the selection
 };
 
 class App {
 public:
+#ifdef _WIN32
     int run(HINSTANCE inst, int show);
     LRESULT wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp);
+#else
+    int run();
+#endif
 
 private:
     enum class Mode { Launcher, Playing };
 
     // platform
+#ifdef _WIN32
     HWND hwnd_ = nullptr;
+    WINDOWPLACEMENT windowed_placement_ = {sizeof(WINDOWPLACEMENT)};
+#else
+    struct SDL_Window* window_ = nullptr;
+#endif
     Video video_;
     Audio audio_;
     Input input_;
     bool running_ = true;
     bool active_window_ = true;
-    WINDOWPLACEMENT windowed_placement_ = {sizeof(WINDOWPLACEMENT)};
     bool is_fullscreen_ = false;
 
     // data
@@ -89,6 +110,18 @@ private:
     int  launcher_sel_ = 0;              // 0..kGameCount-1 games, then Options, Music Player, Credits, Quit
     int  launcher_last_card_ = 0;
     float launcher_anim_[kGameCount + 4] = {};
+    Rect launcher_hit_[kGameCount + 4] = {};   // cards then buttons, where the last draw put them (taps)
+#ifdef __ANDROID__
+    TouchControls touch_;
+    bool touch_active_ = true;           // the last input came from the touch screen (else a controller / keys)
+    bool picking_roms_ = false;
+    float refresh_dt_[48] = {};          // recent display frame intervals: refresh_rate() is measured
+    int refresh_n_ = 0;
+    void set_frame_rate();               // asks Android for a display rate that suits 60 fps
+    uint64_t work_end_ = 0;              // SDL counter when the last frame's drawing was done (perf log)
+    void pick_roms();                    // opens Android's file picker; the files are copied into files/roms
+    void poll_pick();                    // while the picker is open: notices it closing
+#endif
     uint64_t rom_sig_ = 0;
     double rom_poll_ = 0;
     int  state_slot_ = 1;
@@ -105,6 +138,7 @@ private:
     // timing
     double time_ = 0;
     double frame_acc_ = 0;
+    unsigned vsync_phase_ = 0;           // display refreshes counted, for one game frame every N of them
     double fps_display_ = 0;
     int    fps_frames_ = 0;
     double fps_timer_ = 0;
@@ -126,6 +160,7 @@ private:
     // it is on the PATH, else raw BGRA to <name>.vid; audio is 48 kHz stereo s16 in <name>.pcm.
     int capture_w_ = 0, capture_h_ = 0;
     bool recording_ = false;
+#ifdef _WIN32
     FILE* rec_vid_ = nullptr;
     FILE* rec_pcm_ = nullptr;
     HANDLE rec_pipe_ = nullptr, rec_proc_ = nullptr;
@@ -133,6 +168,9 @@ private:
     uint64_t rec_samples_ = 0;
     std::wstring rec_name_;
     bool start_ffmpeg(int w, int h);
+#endif
+    void start_recording(const std::string& name);
+    void record_frame();
     std::vector<uint32_t> pad_stream_;          // "pads": p1 | p2 << 16 per emulated frame
     size_t pad_pos_ = 0;
     void stop_recording();
@@ -144,12 +182,16 @@ private:
     bool load_script(const std::wstring& path);
     void run_script();
 
+    // per platform (app_win.cpp / app_android.cpp)
+#ifdef _WIN32
     bool create_window(HINSTANCE inst, int show);
+    void remember_monitor();
+    static RECT centered_rect(const RECT& work, int w, int h);
+#endif
     void set_fullscreen(bool fs);
     void resize_window_to_scale();
     void move_to_monitor(int index);
-    void remember_monitor();
-    static RECT centered_rect(const RECT& work, int w, int h);
+    double refresh_rate();
     void apply_settings();
     void save_settings();
 

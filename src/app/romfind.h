@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include "sys.h"
 
 struct RomSpec {
     uint32_t crc = 0, size = 0;
@@ -21,14 +22,10 @@ struct RomMatch {
 };
 
 uint32_t crc32_of(const uint8_t* data, size_t n);
-std::wstring exe_dir();
-// Where settings, save states and screenshots go: next to the executable (portable), or
-// %LOCALAPPDATA%\Mickey and Donald Collection when that folder is read-only (e.g. Program Files).
-std::wstring data_dir();
-// Searches the executable directory, its "roms" subfolder and the working directory (and its "roms")
-// for files whose CRC32 matches. Accepts raw .bin/.md/.gen dumps, interleaved .smd dumps, dumps with a
-// 512-byte copier header, and all of these inside .zip archives. Games already found in `out` are
-// skipped; `out` has one entry per spec.
+// Searches the ROM folders (rom_dirs(): on Windows the executable directory, its "roms" subfolder and the
+// working directory and its "roms"; on Android the app's "roms" folder) for files whose CRC32 matches.
+// Accepts raw .bin/.md/.gen dumps, interleaved .smd dumps, dumps with a 512-byte copier header, and all of
+// these inside .zip archives. Games already found in `out` are skipped; `out` has one entry per spec.
 void find_roms(const std::vector<RomSpec>& specs, std::vector<RomMatch>& out);
 // Changes whenever a file is added to, removed from or rewritten in the folders find_roms() searches.
 uint64_t rom_dirs_signature();

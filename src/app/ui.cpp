@@ -110,6 +110,8 @@ void Menu::update(const UiInput& in) {
         return;
     }
     fix_selection(p);
+    if (touch(p, in)) return;
+    if (in.up || in.down) p.free_scroll = false;   // keys / pad: the list follows the selection again
     if (in.back || in.menu) { pop(); return; }
     if (in.up) move(p, -1);
     if (in.down) move(p, 1);
@@ -143,6 +145,35 @@ void Menu::update(const UiInput& in) {
     }
 }
 
+// Touch: dragging scrolls the list with the finger (the selection stays where it is); a tap outside the panel or
+// on its Back button goes back; a tap on a row selects it and acts on it (on a choice or slider, the value's
+// left half steps back, the right half on). Returns true if the input was used up.
+bool Menu::touch(MenuPage& p, const UiInput& in) {
+    if (in.drag != 0 && row_ > 0) {
+        p.scroll -= in.drag / row_;
+        p.free_scroll = true;
+    }
+    if (!in.tap) return false;
+    auto inside = [&](const Rect& r) { return in.tap_x >= r.x && in.tap_x < r.x + r.w && in.tap_y >= r.y && in.tap_y < r.y + r.h; };
+    if (!inside(panel_) || (touch_ui && inside(back_btn_))) { pop(); return true; }
+    if (row_ <= 0 || in.tap_y < list_top_ || in.tap_y >= list_bottom_) return true;
+    int i = (int)std::floor((in.tap_y - list_top_) / row_ + p.scroll);
+    if (i < 0 || i >= (int)p.items.size()) return true;
+    const MenuItem& it = p.items[i];
+    if (!it.selectable() || (it.enabled && !it.enabled())) return true;
+    p.sel = i;
+    UiInput t;
+    const float value_x = panel_.x + panel_.w * 0.55f, value_mid = panel_.x + panel_.w * 0.775f;
+    if (it.kind == MenuItem::Choice || it.kind == MenuItem::Slider) {
+        if (in.tap_x >= value_x) (in.tap_x < value_mid ? t.left : t.right) = true;
+        else if (it.kind == MenuItem::Choice) t.right = true;
+    } else {
+        t.confirm = true;
+    }
+    update(t);
+    return true;
+}
+
 void Menu::draw(Video& v, float time) {
     if (stack_.empty()) return;
     MenuPage& p = stack_.back();
@@ -153,6 +184,7 @@ void Menu::draw(Video& v, float time) {
     float ph = H * 0.84f;
     Rect panel = {(W - pw) * 0.5f, (H - ph) * 0.5f, pw, ph};
     draw_panel(v, panel, accent);
+    panel_ = panel;
 
     const float pad = H * 0.035f;
     // Long titles / hints shrink to fit the panel instead of running out of it.
@@ -164,6 +196,14 @@ void Menu::draw(Video& v, float time) {
         for (size_t i = 0; i + 1 < stack_.size(); i++) crumb += stack_[i].title + "  \xC2\xBB  ";
         v.draw_text(FontId::Small, panel.x + pad, y, crumb, 0xFF8A93A6, Align::Left, fit(FontId::Small, crumb));
         y += v.line_height(FontId::Small);
+    }
+    if (touch_ui) {
+        const char* back = "\xE2\x97\x80  Back";
+        float bh = v.line_height(FontId::Body) * 1.3f, bw = v.measure_text(FontId::Body, back) + bh;
+        back_btn_ = {panel.x + panel.w - pad * 0.6f - bw, panel.y + pad * 0.5f, bw, bh};
+        v.fill_round_rect(back_btn_, bh * 0.5f, 0xFF262C3A);
+        v.draw_text(FontId::Body, back_btn_.x + bw * 0.5f, back_btn_.y + (bh - v.line_height(FontId::Body)) * 0.5f, back, 0xFFD8DDE8,
+                    Align::Center);
     }
     v.draw_text(FontId::Title, panel.x + pad, y, p.title, accent, Align::Left, fit(FontId::Title, p.title));
     y += v.line_height(FontId::Title);
@@ -180,9 +220,10 @@ void Menu::draw(Video& v, float time) {
     const float footer_h = v.line_height(FontId::Small) * 3.2f;
     const float list_top = y, list_bottom = panel.y + panel.h - footer_h - pad * 0.5f;
     const int visible = std::max(1, (int)((list_bottom - list_top) / row));
+    list_top_ = list_top; list_bottom_ = list_bottom; row_ = row;
     // Keep the selection in view (smooth scroll).
     float target = p.scroll;
-    if (p.sel >= 0) {
+    if (p.sel >= 0 && !p.free_scroll) {
         if (p.sel < target + 1) target = (float)std::max(0, p.sel - 1);
         if (p.sel > target + visible - 2) target = (float)(p.sel - visible + 2);
         // On the last selectable row, also bring the read-only rows after it (e.g. Options' Hotkeys list) into
@@ -194,13 +235,15 @@ void Menu::draw(Video& v, float time) {
     }
     target = std::clamp(target, 0.0f, (float)std::max(0, (int)p.items.size() - visible));
     p.scroll += (target - p.scroll) * 0.35f;
-    if (std::fabs(target - p.scroll) < 0.01f) p.scroll = target;
+    if (std::fabs(target - p.scroll) < 0.01f || p.free_scroll) p.scroll = target;
 
     const float tx = panel.x + pad, vx = panel.x + panel.w - pad;
     int first = (int)std::floor(p.scroll);
     for (int i = first; i < (int)p.items.size() && i < first + visible + 1; i++) {
         float ry = list_top + (i - p.scroll) * row;
-        if (ry < list_top - row * 0.5f || ry + row > list_bottom + row * 0.5f) continue;
+        // (a dragged list stops at any position: rows half out of it are left out rather than drawn over the title)
+        const float slack = p.free_scroll ? row * 0.2f : row * 0.5f;
+        if (ry < list_top - slack || ry + row > list_bottom + slack) continue;
         const MenuItem& it = p.items[i];
         bool en = !it.enabled || it.enabled();
         bool sel = i == p.sel;

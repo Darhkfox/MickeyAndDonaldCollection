@@ -1,10 +1,8 @@
 #include "romfind.h"
 #include "unzip.h"
-#include <windows.h>
 #include <cctype>
 #include <cstring>
-#include <fstream>
-#include <iterator>
+#include <cwctype>
 
 uint32_t crc32_of(const uint8_t* data, size_t n) {
     static uint32_t table[256];
@@ -22,39 +20,6 @@ uint32_t crc32_of(const uint8_t* data, size_t n) {
     return c ^ 0xFFFFFFFFu;
 }
 
-std::wstring exe_dir() {
-    wchar_t buf[MAX_PATH];
-    DWORD n = GetModuleFileNameW(nullptr, buf, MAX_PATH);
-    std::wstring p(buf, n);
-    size_t s = p.find_last_of(L"\\/");
-    return s == std::wstring::npos ? L"." : p.substr(0, s);
-}
-
-std::wstring data_dir() {
-    static std::wstring dir;
-    if (!dir.empty()) return dir;
-    dir = exe_dir();
-    HANDLE h = CreateFileW((dir + L"\\.write_test").c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
-                           FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE, nullptr);
-    if (h != INVALID_HANDLE_VALUE) {
-        CloseHandle(h);
-        return dir;
-    }
-    wchar_t buf[MAX_PATH];
-    DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", buf, MAX_PATH);
-    if (n == 0 || n >= MAX_PATH) return dir;
-    dir = std::wstring(buf, n) + L"\\Mickey and Donald Collection";
-    CreateDirectoryW(dir.c_str(), nullptr);
-    return dir;
-}
-
-static bool read_file(const std::wstring& path, std::vector<uint8_t>& out) {
-    std::ifstream f(path, std::ios::binary);
-    if (!f) return false;
-    out.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
-    return true;
-}
-
 // .smd: 512-byte header, then 16 KB blocks with odd bytes first, even bytes second.
 static std::vector<uint8_t> deinterleave_smd(const std::vector<uint8_t>& in) {
     std::vector<uint8_t> out(in.size() - 512);
@@ -70,22 +35,6 @@ static std::vector<uint8_t> deinterleave_smd(const std::vector<uint8_t>& in) {
 }
 
 namespace {
-std::vector<std::wstring> search_dirs() {
-    std::vector<std::wstring> dirs = {exe_dir(), exe_dir() + L"\\roms"};
-    wchar_t cwd[MAX_PATH];
-    if (GetCurrentDirectoryW(MAX_PATH, cwd)) {
-        dirs.push_back(cwd);
-        dirs.push_back(std::wstring(cwd) + L"\\roms");
-    }
-    std::vector<std::wstring> out;     // the working directory is usually the exe's
-    for (const auto& d : dirs) {
-        bool dup = false;
-        for (const auto& o : out) dup = dup || _wcsicmp(o.c_str(), d.c_str()) == 0;
-        if (!dup) out.push_back(d);
-    }
-    return out;
-}
-
 // Mega Drive ROM sizes, as dumped (a copier header adds 512 bytes).
 bool plausible_size(uint64_t n) {
     return n >= 128 * 1024 && n <= (8u << 20) + 512 && (n % 16384 == 0 || n % 16384 == 512);
@@ -93,7 +42,10 @@ bool plausible_size(uint64_t n) {
 
 bool has_ext(const std::wstring& name, const wchar_t* ext) {
     size_t n = wcslen(ext);
-    return name.size() > n && _wcsicmp(name.c_str() + name.size() - n, ext) == 0;
+    if (name.size() <= n) return false;
+    for (size_t i = 0; i < n; i++)
+        if (towlower(name[name.size() - n + i]) != towlower(ext[i])) return false;
+    return true;
 }
 
 // The ROM images a dump can stand for: as it is, or with a 512-byte copier header dropped
@@ -226,24 +178,21 @@ void find_roms(const std::vector<RomSpec>& specs, std::vector<RomMatch>& out) {
     for (auto& m : out)
         if (!m.found) { m.other_file.clear(); m.other_desc.clear(); }
     Scan scan{specs, out};
-    for (const auto& dir : search_dirs()) {
-        WIN32_FIND_DATAW fd;
-        HANDLE h = FindFirstFileW((dir + L"\\*").c_str(), &fd);
-        if (h == INVALID_HANDLE_VALUE) continue;
-        do {
+    std::vector<DirEntry> entries;
+    for (const auto& dir : rom_dirs()) {
+        if (!list_dir(dir, entries)) continue;
+        for (const DirEntry& e : entries) {
             if (scan.done()) break;
-            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
-            const uint64_t fsize = ((uint64_t)fd.nFileSizeHigh << 32) | fd.nFileSizeLow;
-            const std::wstring path = dir + L"\\" + fd.cFileName;
-            if (has_ext(fd.cFileName, L".zip")) {
+            if (e.is_dir) continue;
+            const std::wstring path = path_join(dir, e.name);
+            if (has_ext(e.name, L".zip")) {
                 scan.zip(path);
                 continue;
             }
-            if (!plausible_size(fsize)) continue;
+            if (!plausible_size(e.size)) continue;
             std::vector<uint8_t> data;
             if (read_file(path, data)) scan.consider(std::move(data), path);
-        } while (FindNextFileW(h, &fd));
-        FindClose(h);
+        }
     }
 }
 
@@ -252,18 +201,15 @@ uint64_t rom_dirs_signature() {
     auto mix = [&h](const void* p, size_t n) {
         for (size_t i = 0; i < n; i++) h = (h ^ ((const uint8_t*)p)[i]) * 1099511628211ull;
     };
-    for (const auto& dir : search_dirs()) {
-        WIN32_FIND_DATAW fd;
-        HANDLE f = FindFirstFileW((dir + L"\\*").c_str(), &fd);
-        if (f == INVALID_HANDLE_VALUE) { mix("-", 1); continue; }
-        do {
-            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
-            mix(fd.cFileName, wcslen(fd.cFileName) * sizeof(wchar_t));
-            mix(&fd.nFileSizeLow, 4);
-            mix(&fd.nFileSizeHigh, 4);
-            mix(&fd.ftLastWriteTime, sizeof(fd.ftLastWriteTime));
-        } while (FindNextFileW(f, &fd));
-        FindClose(f);
+    std::vector<DirEntry> entries;
+    for (const auto& dir : rom_dirs()) {
+        if (!list_dir(dir, entries)) { mix("-", 1); continue; }
+        for (const DirEntry& e : entries) {
+            if (e.is_dir) continue;
+            mix(e.name.data(), e.name.size() * sizeof(wchar_t));
+            mix(&e.size, sizeof(e.size));
+            mix(&e.mtime, sizeof(e.mtime));
+        }
     }
     return h;
 }

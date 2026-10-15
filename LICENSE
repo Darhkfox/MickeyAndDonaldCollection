@@ -20,7 +20,9 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-This licence covers the port's own code; there is no bundled third-party code.
+This licence covers the port's own code. The Windows build has no third-party
+code; the Android build includes SDL2 (zlib licence), which is fetched
+separately by android/fetch_sdl.ps1.
 
 Castle of Illusion, QuackShot and World of Illusion are © Sega; Mickey Mouse and
 Donald Duck are © Disney. No game code, graphics, sound or ROM data are included;

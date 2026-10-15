@@ -32,6 +32,7 @@ target_include_directories(mdcore PUBLIC src)
 add_executable(DisneyClassics WIN32
     src/app/main.cpp
     src/app/app.cpp
+    src/app/app_win.cpp
     src/app/app_menus.cpp
     src/app/launcher.cpp
     src/app/jukebox.cpp
@@ -40,6 +41,7 @@ add_executable(DisneyClassics WIN32
     src/app/palette.cpp
     src/app/audio_mixer.cpp
     src/app/romfind.cpp
+    src/app/sys_win.cpp
     src/app/unzip.cpp
     src/app/monitors.cpp
     src/app/png.cpp

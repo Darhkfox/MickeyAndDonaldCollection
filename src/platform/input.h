@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-struct HWND__; typedef HWND__* HWND;
+#include "native.h"
 
 // Normalised controller buttons (Xbox layout). DirectInput devices are mapped
 // onto this layout with a default mapping (see input.cpp), raw buttons are
@@ -34,7 +34,7 @@ class Input {
 public:
     Input();
     ~Input();
-    bool init(HWND hwnd);
+    bool init(NativeWindow window);
     void shutdown();
 
     // Call once per frame before reading state. Handles hot-plug (XInput every
