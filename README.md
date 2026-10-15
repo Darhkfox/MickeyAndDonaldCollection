@@ -14,7 +14,7 @@ originals, then adds game-specific patches and a PC frontend.
 
 ## Getting started
 
-1. Download the zip from the Releases page and unzip the `Mickey and Donald Collection` folder anywhere
+1. Download the zip from the [latest release](https://github.com/Darhkfox/MickeyAndDonaldCollection/releases/latest) and unzip the `Mickey and Donald Collection` folder anywhere
    (nothing needs installing: one self-contained `DisneyClassics.exe`).
 2. Put the ROMs next to `DisneyClassics.exe`, or in a `roms` folder beside it:
 
