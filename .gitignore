@@ -1,0 +1,57 @@
+# ROMs and other game data: never commit them (players supply their own copies)
+*.bin
+*.gen
+*.smd
+*.32x
+/*.md
+!/README.md
+roms/
+*.zip
+*.7z
+*.rar
+
+# builds and packaged output
+build/
+dist/
+
+# save states, input recordings, settings and captures (states hold game RAM / VRAM)
+*.state
+*.pads
+saves/
+screenshots/
+settings.ini
+
+# test, analysis and trailer output: screenshots of the games, patched ROM dumps, recordings
+tools/qa/
+tools/states/
+tools/bin/
+tools/recover/
+tools/tests/*.obj
+tools/tests/*.exe
+tools/re/*_out/
+tools/trailer/ref/
+tests/tests/
+trailer_work/
+*.png
+!res/*.png
+*.npz
+*.npy
+*.wav
+*.pcm
+*.mkv
+*.mp4
+
+# QA working notes (the round-by-round test reports)
+docs/QA_*.md
+docs/qa_*.md
+
+# local working files
+.claude/
+CLAUDE.md
+.vs/
+.vscode/
+*.user
+__pycache__/
+*.pyc
+Thumbs.db
+desktop.ini
