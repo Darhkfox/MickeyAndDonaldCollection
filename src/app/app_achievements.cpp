@@ -25,7 +25,7 @@ void App::ach_welcome() {
     p.items.push_back(MenuItem::info("Beat the bosses, clear the worlds, pull off tricky moves and find the secret ones."));
     p.items.push_back(MenuItem::header("To keep them fair, while achievements are on"));
     p.items.push_back(MenuItem::info("Cheats, Level Select, Fast Forward and Rewind are switched off."));
-    p.items.push_back(MenuItem::info("Save states still work. You can turn achievements off at any time in Options."));
+    p.items.push_back(MenuItem::info("Save states still work. Turn achievements off any time on the Achievements page."));
     p.items.push_back(MenuItem::header(""));
     p.items.push_back(MenuItem::action("Play with achievements", [this]() { menu_.close(); },
                                        "Each one pops up as you earn it; the launcher's Achievements page lists them all."));
@@ -33,7 +33,7 @@ void App::ach_welcome() {
         set_achievements(false);
         save_settings();
         menu_.close();
-    }, "Cheats, Level Select, Fast Forward and Rewind stay available. Turn achievements on again in Options."));
+    }, "Cheats, Level Select, Fast Forward and Rewind stay available. Turn achievements on again on their page."));
     menu_.open(std::move(p));
 }
 
@@ -181,6 +181,7 @@ MenuPage App::achievements_page(int game) {
     MenuPage p;
     p.title = "Achievements";
     p.wide = true;
+    p.items.push_back(achievements_switch());
     int total = 0, got = 0;
     auto add = [&](const std::string& group, const std::vector<AchievementDef>& defs) {
         p.items.push_back(MenuItem::header(group));
@@ -214,9 +215,26 @@ MenuPage App::achievements_page(int game) {
     add("Across the collection", collection_achievements());
     char buf[96];
     snprintf(buf, sizeof(buf), "%d of %d unlocked", got, total);
-    const char* state = !settings_.achievements ? "off: switch them on under Options to earn them"
-                        : game >= 0 && !ach_ctx_.run_counts ? "on from your next Reset Game"
-                        : "on: no cheats, level select, rewind or fast forward";
-    p.subtitle = std::string(buf) + "   \xE2\x80\xA2   " + state;
+    p.subtitle = buf;
     return p;
+}
+
+// The Achievements on / off switch (Options, and the top of the Achievements page). Switching off during a game that
+// counts asks first: that game can't earn any more after it.
+MenuItem App::achievements_switch() {
+    MenuItem it = MenuItem::toggle("Achievements", [this]() { return settings_.achievements; }, [this](bool on) {
+        if (on || mode_ != Mode::Playing || !ach_ctx_.run_counts) {
+            set_achievements(on);
+            save_settings();
+            return;
+        }
+        menu_.confirm("Turn achievements off?", [this]() {
+            set_achievements(false);
+            save_settings();
+        }, "Cheats, Level Select, Fast Forward and Rewind come back. Achievements count again after a Reset Game.");
+    }, "On: earn achievements; cheats, level select, fast forward and rewind are off. Off: those come back.");
+    it.value_text = [this]() {
+        return std::string(settings_.achievements && mode_ == Mode::Playing && !ach_ctx_.run_counts ? "from your next Reset Game" : "");
+    };
+    return it;
 }

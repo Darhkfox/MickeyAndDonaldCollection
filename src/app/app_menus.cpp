@@ -98,9 +98,7 @@ void App::open_options_menu(bool from_launcher) {
     p.items.push_back(rw);
     // (right under what it switches off)
     p.items.push_back(MenuItem::header("Achievements"));
-    p.items.push_back(MenuItem::toggle("Achievements", [this]() { return settings_.achievements; },
-                                       [this](bool v) { set_achievements(v); },
-                                       "On: earn achievements; cheats, level select, fast forward and rewind are off. Count from the next game start."));
+    p.items.push_back(achievements_switch());
 #ifdef __ANDROID__
     p.items.push_back(MenuItem::header("Touch screen"));
     p.items.push_back(MenuItem::choice("On-screen Controls", {"When touched", "Always", "Off"}, [this]() { return settings_.touch_mode; },

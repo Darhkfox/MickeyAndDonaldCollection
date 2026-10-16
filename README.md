@@ -104,8 +104,8 @@ that fits the screen (2:1 on most phones).
 - Story milestones, plus gameplay feats such as bouncing on three enemies in a row without touching the
   ground, beating a boss without a scratch, a Quack Attack rampage, climbing a wall on your own plungers,
   or knocking out three enemies with one swish of the cape. Some are hidden until you earn them.
-- Achievements are earned fair and square: while they're on (*Options → Achievements*, on by default),
-  cheats, the level select, fast forward and rewind are switched off; save states still work. They count
+- Achievements are earned fair and square: while they're on (on by default; the switch is at the top of
+  the Achievements page, and in Options), cheats, the level select, fast forward and rewind are switched off; save states still work. They count
   in a game started with achievements on: switched on mid-game they count from the next *Reset Game*, and
   a save state made without them doesn't count either. The "finish the game from a new game" ones need
   the whole playthrough from New Game. Switch achievements off to use cheats, the level select, fast

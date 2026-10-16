@@ -183,8 +183,8 @@
 
   LEVEL SELECT
      Start any level. Your current game is not kept, so make a save state
-     first if you want to come back to it. Only while achievements are off
-     (Options > Achievements): with them on it's greyed out.
+     first if you want to come back to it. Only while achievements are off:
+     with them on it's greyed out (see ACHIEVEMENTS below).
        Castle of Illusion ... 28 entries: every act of the Enchanted Forest,
                               Toyland, the Storm, the Library (including the
                               tea cups) and the Clock Tower, each boss, and
@@ -201,8 +201,8 @@
   CHEATS
      Switch each cheat on or off; they work straight away and stay on until
      you turn them off (even after you quit). "Disable All" turns them all
-     off. Only while achievements are off (Options > Achievements): with
-     them on it's greyed out.
+     off. Only while achievements are off: with them on it's greyed out
+     (see ACHIEVEMENTS below).
        Castle of Illusion ... Invincibility, Infinite Power, Infinite Tries,
                               Infinite Items, Infinite Continues, Start With
                               Full Power, and the developers' hidden level
@@ -219,7 +219,9 @@
 
   ACHIEVEMENTS
      The achievements of the game you're playing: what you've earned (and
-     when), and progress towards the ones that count something.
+     when), and progress towards the ones that count something. The switch
+     at the top turns achievements on or off (switching them off during a
+     game asks first: that game can't earn any more afterwards).
 
   SOUND TEST / MUSIC PLAYER
      Every music track, sound effect and voice of the game, played by the
@@ -325,10 +327,11 @@
   page and the pause menu list them all. Hidden ones show as "???" until
   you earn them.
 
-  They're earned fair and square: while achievements are on (Options >
-  Achievements, on by default), cheats, the level select, fast forward and
-  rewind are switched off. Save states still work. Switch achievements off
-  to use those again -- anything you've already earned stays earned.
+  They're earned fair and square: while achievements are on (on by default;
+  the switch is at the top of the Achievements page, and in Options),
+  cheats, the level select, fast forward and rewind are switched off. Save
+  states still work. Switch achievements off to use those again -- anything
+  you've already earned stays earned.
 
   Achievements count in a game that was started with them on (from the
   launcher, or with Reset Game). If you switch them on during a game, they

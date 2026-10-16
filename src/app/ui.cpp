@@ -122,8 +122,11 @@ void Menu::update(const UiInput& in) {
         if (in.confirm && it.on_activate) { auto fn = it.on_activate; fn(); }   // may restructure the stack
         return;
     case MenuItem::Toggle:
-        if ((in.confirm || in.left || in.right) && it.set_bool) it.set_bool(!it.get_bool());
-        break;
+        if ((in.confirm || in.left || in.right) && it.set_bool) {
+            auto fn = it.set_bool;   // (it may open a confirmation: the stack can move under `it`)
+            fn(!it.get_bool());
+        }
+        return;
     case MenuItem::Choice: {
         int n = (int)it.choices.size();
         if (n == 0) break;

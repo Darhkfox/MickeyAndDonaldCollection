@@ -153,6 +153,7 @@ private:
     void ach_load_tag(const std::string& tag);
     void set_achievements(bool on);
     MenuPage achievements_page(int game);   // a game's list (index into games_) and the collection's; -1 = all
+    MenuItem achievements_switch();      // the on / off switch (Options, and the top of the Achievements page)
 
     // timing
     double time_ = 0;

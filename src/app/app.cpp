@@ -186,7 +186,7 @@ void App::frame(double dt) {
     // With achievements on, rewind and fast forward are off; using them says so (now and then).
     if (ach_locked_note_ > 0) ach_locked_note_ -= (float)dt;
     if (in_play && settings_.achievements && ((rewind_held && settings_.rewind) || (ff_held && settings_.fast_forward))) {
-        if (ach_locked_note_ <= 0) menu_.toast("Rewind and fast forward are off while achievements are on (Options)", 3.0f);
+        if (ach_locked_note_ <= 0) menu_.toast("Rewind and fast forward are off while achievements are on (Menu > Achievements)", 3.0f);
         ach_locked_note_ = 4.0f;
     }
     rewinding_ = in_play && settings_.rewind && !settings_.achievements && rewind_held;
