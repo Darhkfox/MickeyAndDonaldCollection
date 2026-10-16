@@ -43,6 +43,43 @@ struct FrameInfo {
     bool pillar_below = false; // lines [mask_lines, end) are pillarboxed (HUD shown at its original width)
 };
 
+struct AchievementDef {
+    const char* id;          // stable id stored in achievements.ini ("coi_timber")
+    const char* name;
+    const char* desc;
+    bool secret = false;     // shown as "???" until earned
+    int target = 0;          // counted achievements: the count to reach (shown as progress), else 0
+    bool set = false;        // the progress is a set of things found (bits; shown as how many), see AchievementCtx::marked
+};
+
+// What a module's achievement_frame() works with. The app owns it per session: `scratch` is reset when the
+// run is interrupted (level select, a loaded save state); `run_bits` belong to the playthrough and travel with
+// its save states.
+struct AchievementCtx {
+    bool run_counts = false;     // a playthrough started with New Game, with no level select since
+    bool level_select = false;   // in: a level was just started with the port's level select. Its set-up ran inside
+                                 // GameModule::start_level, so the first frame seen is already gameplay (the module
+                                 // clears it once used)
+    int  players = 1;            // 2 for a two-player game (set by the module when it can tell)
+    uint32_t run_bits = 0;       // the module's facts about the playthrough (e.g. "a life was lost")
+    int32_t scratch[32] = {};    // the module's frame-to-frame memory
+    std::vector<uint8_t> prev;   // the previous frame's 68000 RAM (64 KB; empty on the first frame), kept by the app
+    std::vector<int> unlocked;   // out: indices into achievements() earned this frame
+    std::vector<std::pair<int, int>> progress;   // out: (index, count): the count reached now (the best is kept)
+    std::vector<int> counted;    // out: indices whose saved count goes up by one (kept across sessions; earned at target)
+    std::vector<std::pair<int, int>> marked;     // out: (index, bit) found, for a `set` achievement (earned at target)
+    void reset_scratch() { for (int32_t& v : scratch) v = 0; prev.clear(); }
+};
+
+// Read access to a 68000 RAM image (big-endian bytes, $FF0000-$FFFFFF), the current frame's or the previous one's.
+struct RamView {
+    const uint8_t* r;
+    uint8_t  b(uint32_t a) const { return r[a & 0xFFFF]; }
+    uint16_t w(uint32_t a) const { a &= 0xFFFF; return (uint16_t)((r[a] << 8) | r[(a + 1) & 0xFFFF]); }
+    int16_t  sw(uint32_t a) const { return (int16_t)w(a); }
+    uint32_t l(uint32_t a) const { return ((uint32_t)w(a) << 16) | w(a + 2); }
+};
+
 class GameModule {
 public:
     virtual ~GameModule() = default;
@@ -87,6 +124,11 @@ public:
     virtual void jukebox_frame(MegaDrive& md) { (void)md; }
     virtual void play_sound(MegaDrive& md, int id) { (void)md; (void)id; }
     virtual void stop_sound(MegaDrive& md) { (void)md; }
+
+    // Achievements: the list (order fixed: indices are what achievement_frame() reports), and the check run after
+    // every emulated frame of a game being played with achievements on. Reads RAM only.
+    virtual std::vector<AchievementDef> achievements() const { return {}; }
+    virtual void achievement_frame(const MegaDrive& md, AchievementCtx& ctx) const { (void)md; (void)ctx; }
 };
 
 GameModule* create_coi_module();

@@ -1,5 +1,6 @@
 // Castle of Illusion Starring Mickey Mouse (USA) - enhancement module.
 // Addresses and techniques: docs/re_coi_game.md, docs/re_coi_wide.md.
+#include <cstdlib>
 #include "game.h"
 #include "common.h"
 #include "../core/md.h"
@@ -421,6 +422,175 @@ public:
         info.mask_left = std::clamp(lo + E - camx, 0, E);
         info.mask_right = std::clamp(camx + E - hi, 0, E);
         if (hud_window(md.vdp, 192)) info.mask_lines = 192;
+    }
+
+    std::vector<AchievementDef> achievements() const override {
+        return {
+            {"coi_timber", "Timber!", "Defeat the Evil Tree.", false, 0},
+            {"coi_toyland", "Toy Box Champion", "Clear Toyland.", false, 0},
+            {"coi_storm", "Calm After the Storm", "Clear the Storm.", false, 0},
+            {"coi_desserts", "Just Desserts", "Clear the Library and Dessert Land.", false, 0},
+            {"coi_jester", "Time's Up, Jester", "Clear the Clock Tower.", false, 0},
+            {"coi_minnie", "Minnie Rescued", "Defeat Mizrabel and rescue Minnie.", false, 0},
+            {"coi_hard", "Hard-Boiled Mouse", "Finish the game on Hard, from a new game.", false, 0},
+            {"coi_noscratch", "Not a Scratch", "Clear any act without losing a power star.", false, 0},
+            {"coi_flawless", "Flawless Showdown", "Beat any boss without losing a power star.", false, 0},
+            {"coi_iron", "Iron Mouse", "Finish the game from a new game without losing a try.", false, 0},
+            {"coi_tea", "Tea Party", "Visit both tea cups in the Library.", false, 2, true},
+            {"coi_double", "Double Bounce", "Bounce on two enemies in a row without touching the ground.", true, 0},
+            {"coi_hattrick", "Hat Trick", "Bounce on three enemies in a row without touching the ground.", true, 0},
+            {"coi_apple", "Apple of My Eye", "Defeat an enemy with a thrown apple or marble.", false, 0},
+            {"coi_juggler", "Juggler", "Carry 30 items at once.", false, 30},
+            {"coi_score", "Six Figures", "Score 100,000 points.", false, 0},
+            {"coi_speedy", "Speedy Mickey", "Clear the Enchanted Forest's first act in record time.", true, 0},
+        };
+    }
+
+    // ---- Achievements: the rules and their verification on real gameplay are in tools/qa/ach/coi (findings.md,
+    // coi_ach.py, v_*.py). Indices follow achievements().
+    enum { A_TIMBER, A_TOYLAND, A_STORM, A_DESSERTS, A_JESTER, A_MINNIE, A_HARD, A_NOSCRATCH, A_FLAWLESS, A_IRON, A_TEA,
+           A_DOUBLE, A_HATTRICK, A_APPLE, A_JUGGLER, A_SCORE, A_SPEEDY };
+    enum { S_FIRED, S_FRAME, S_SEG, S_SEG_LEVEL, S_SEG_BOSS, S_SEG_START, S_SEG_CLEAN, S_SEG_DONE, S_CHAIN };
+    // run bits: a run is going (from leaving OPTIONS), it began as a New Game, Hard all along, a try was lost
+    enum : uint32_t { R_RUN = 1, R_NEWGAME = 2, R_HARD_OK = 4, R_TRIES_LOST = 8 };
+
+    void achievement_frame(const MegaDrive& md, AchievementCtx& c) const override {
+        if (c.prev.size() != 0x10000) return;
+        const RamView s{md.ram}, p{c.prev.data()};
+        auto fire = [&](int i) {
+            if (c.scratch[S_FIRED] & (1 << i)) return;
+            c.scratch[S_FIRED] |= 1 << i;
+            c.unlocked.push_back(i);
+        };
+        constexpr uint32_t MODE = 0xFFF300, DEMO = 0xFFF40A, DEMO_END = 0xFFF422, PAUSE = 0xFFF41D, LEVEL = 0xFFFF42,
+                           DIFF = 0xFFFF0D, DIFF_MASTER = 0xFFFF0F, SCORE = 0xFFF22C, ITEMS = 0xFFF320, POWER = 0xFFF322,
+                           TRIES = 0xFFF324, EXIT = 0xFFF412, BOSS_DOWN = 0xFFF451, MICKEY = 0xFFDC00;
+        enum { M_OPTIONS = 0x0A, M_LEVEL_INIT = 0x0C, M_GAMEPLAY = 0x0E, M_WARP = 0x10, M_FINAL = 0x1B };
+        // (an init mode can run and hand over inside one frame, so transitions are tested against groups)
+        auto story = [](int md_) { return md_ == 0x28 || md_ == 0x2A; };
+        auto tally = [](int md_) { return md_ == 0x24 || md_ == 0x26; };
+        auto ending = [](int md_) { return md_ == 0x2C || md_ == 0x2E || md_ == 0x14 || md_ == 0x16; };
+        auto boss_index = [](int lv) {   // the round-clear achievement of a boss level, or -1
+            switch (lv) {
+            case 0x04: return (int)A_TIMBER;
+            case 0x08: return (int)A_TOYLAND;
+            case 0x0C: return (int)A_STORM;
+            case 0x16: return (int)A_DESSERTS;
+            case 0x1A: return (int)A_JESTER;
+            default: return -1;
+            }
+        };
+        int& seg = c.scratch[S_SEG];
+        int& chain = c.scratch[S_CHAIN];
+        const int frame = ++c.scratch[S_FRAME];
+        const int sm = s.w(MODE), pm = p.w(MODE), level = s.w(LEVEL);
+        // the demo (and its ~66-frame fade-out after the input ran out) is never play
+        const bool demo = s.b(DEMO) || s.b(DEMO_END) || p.b(DEMO) || p.b(DEMO_END);
+        // the gameplay handler ran this frame (so a level init setting POWER is never taken as a hit)
+        const bool ran = (pm == M_GAMEPLAY || pm == M_WARP) && !demo;
+        const int power = s.sw(POWER), ppower = p.sw(POWER), tries = s.sw(TRIES), ptries = p.sw(TRIES);
+
+        // run start (leaving OPTIONS: mode $28 = New Game with level 0) / end (mode $00)
+        if (pm == M_OPTIONS && sm != M_OPTIONS)
+            c.run_bits = R_RUN | (story(sm) ? R_NEWGAME : 0) | (s.b(DIFF_MASTER) == 1 ? R_HARD_OK : 0);
+        if (sm == 0 && pm != 0) { c.run_bits = 0; seg = 0; }
+        if (demo) { seg = 0; chain = 0; return; }
+
+        // a level attempt starts on the first gameplay frame after a level init (every death goes through it), or on
+        // the first frame of a level the level select started (its init ran inside start_level)
+        const bool selected = c.level_select && sm == M_GAMEPLAY;
+        c.level_select = false;
+        if ((pm == M_LEVEL_INIT && sm == M_GAMEPLAY) || selected) {
+            seg = 1;
+            c.scratch[S_SEG_LEVEL] = level;
+            c.scratch[S_SEG_BOSS] = boss_index(level) >= 0 || level == M_FINAL;
+            c.scratch[S_SEG_START] = frame;
+            c.scratch[S_SEG_CLEAN] = 1;
+            c.scratch[S_SEG_DONE] = 0;
+            chain = 0;
+            if ((c.run_bits & R_RUN) && s.b(DIFF) != 1) c.run_bits &= ~R_HARD_OK;
+            // the two tea cups with a door ($13 has none); entering one with the level select doesn't count
+            if (level == 0x12 && !selected) c.marked.push_back({A_TEA, 0});
+            if (level == 0x14 && !selected) c.marked.push_back({A_TEA, 1});
+        }
+        // hits and deaths (only what the gameplay handler did)
+        if (ran) {
+            if (tries < ptries && (c.run_bits & R_RUN)) c.run_bits |= R_TRIES_LOST;
+            if (power < ppower || tries < ptries) {
+                chain = 0;
+                if (seg && !c.scratch[S_SEG_DONE]) c.scratch[S_SEG_CLEAN] = 0;
+            }
+            if ((c.run_bits & R_RUN) && s.b(DIFF) != 1) c.run_bits &= ~R_HARD_OK;
+        }
+        // act clears and boss defeats ending the level attempt
+        if (ran && seg && !c.scratch[S_SEG_DONE]) {
+            const int lv = c.scratch[S_SEG_LEVEL];
+            const bool act_done = ((s.b(EXIT) & 1) && !(p.b(EXIT) & 1)) || (tally(sm) && boss_index(lv) < 0);
+            if (act_done && !c.scratch[S_SEG_BOSS]) {
+                c.scratch[S_SEG_DONE] = 1;
+                if (c.scratch[S_SEG_CLEAN]) fire(A_NOSCRATCH);
+                if (lv == 0x00 && frame - c.scratch[S_SEG_START] <= 2880) fire(A_SPEEDY);   // 48 s
+            }
+            if (boss_index(lv) >= 0 && s.b(BOSS_DOWN) && !p.b(BOSS_DOWN)) {   // ($F451 is set by other things elsewhere)
+                c.scratch[S_SEG_DONE] = 1;
+                if (lv == 0x04) fire(A_TIMBER);
+                if (c.scratch[S_SEG_CLEAN]) fire(A_FLAWLESS);
+            }
+            if (lv == M_FINAL && ending(sm)) {
+                c.scratch[S_SEG_DONE] = 1;
+                if (c.scratch[S_SEG_CLEAN]) fire(A_FLAWLESS);
+            }
+        }
+        // a round's gem tally after its boss; Mizrabel defeated -> the ending
+        if (pm == M_GAMEPLAY && tally(sm) && boss_index(level) >= 0 && level != 0x04) fire(boss_index(level));
+        if (pm == M_GAMEPLAY && ending(sm) && level == M_FINAL) {
+            fire(A_MINNIE);
+            if (c.run_counts && (c.run_bits & R_RUN) && (c.run_bits & R_NEWGAME)) {
+                if (c.run_bits & R_HARD_OK) fire(A_HARD);
+                if (!(c.run_bits & R_TRIES_LOST)) fire(A_IRON);
+            }
+        }
+        // counters, in real gameplay
+        if (sm == M_GAMEPLAY && !(s.b(PAUSE) & 1)) {
+            const int items = s.w(ITEMS);
+            if (items >= 30) fire(A_JUGGLER);
+            if (items > p.w(ITEMS)) c.progress.push_back({A_JUGGLER, std::min(items, 30)});
+            if (s.l(SCORE) >= 100000) fire(A_SCORE);
+        }
+
+        // enemies defeated (they become object id 3): bounce chains and thrown items
+        if (!ran || (sm != M_GAMEPLAY && sm != M_WARP)) return;
+        const int mst = s.b(MICKEY + 3), pmst = p.b(MICKEY + 3);
+        auto bounce = [](int st) { return st == 0x13 || st == 0x14; };
+        const bool air = (mst >= 5 && mst <= 0x0C) || bounce(mst) || (mst >= 0x17 && mst <= 0x1A);
+        if (!air) chain = 0;   // touched the ground (or swims, rides, is hurt): the chain is over
+        // a stomp registered this frame: an enemy set Mickey's +$31 bit 1, or his bounce handler already consumed it
+        // and replaced the falling speed by the bounce speed (gravity only ever increases it)
+        const bool bit1 = s.b(MICKEY + 0x31) & 2, pbit1 = p.b(MICKEY + 0x31) & 2;
+        const int32_t yv = (int32_t)s.l(MICKEY + 0x1C), pyv = (int32_t)p.l(MICKEY + 0x1C);
+        const bool stomp = bounce(mst) && ((bit1 && !pbit1) || (bounce(pmst) && !pbit1 && yv < pyv && yv < 0));
+        int kx[16], ky[16], nk = 0;
+        for (uint32_t a = 0xFFD000; a < 0xFFE000; a += 0x40) {
+            const int id = s.w(a), pid = p.w(a);
+            if (id == 3 && pid != 0 && pid != 3 && nk < 16) { kx[nk] = s.sw(a + 0x10); ky[nk] = s.sw(a + 0x14); nk++; }
+        }
+        if (!nk) return;
+        const int mx = s.sw(MICKEY + 0x10), my = s.sw(MICKEY + 0x14);
+        bool near = false;
+        for (int k = 0; k < nk; k++)
+            if (std::abs(kx[k] - mx) <= 48 && ky[k] - my >= -32 && ky[k] - my <= 80) near = true;
+        if (stomp && near) {
+            ++chain;
+            if (chain >= 2) fire(A_DOUBLE);
+            if (chain >= 3) fire(A_HATTRICK);
+        }
+        // a thrown apple / marble (id 2, live: +$22 = 0) cleared in the frame an enemy next to it was defeated
+        for (uint32_t i = 0; i < 5; i++) {
+            const uint32_t a = 0xFFDC40 + i * 0x40;
+            if (p.w(a) != 2 || p.w(a + 0x22) != 0 || s.w(a) == 2) continue;
+            for (int k = 0; k < nk; k++)
+                if (std::abs(kx[k] - p.sw(a + 0x10)) <= 48 && std::abs(ky[k] - p.sw(a + 0x14)) <= 48) fire(A_APPLE);
+        }
     }
 
     std::vector<CheatEntry> cheats() const override {

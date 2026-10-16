@@ -1,5 +1,6 @@
 // World of Illusion Starring Mickey Mouse and Donald Duck (USA) - enhancement module.
 // Addresses and techniques: docs/re_woi_game.md, docs/re_woi_wide.md.
+#include <cstdlib>
 #include "game.h"
 #include "common.h"
 #include "../core/md.h"
@@ -386,6 +387,186 @@ public:
             md.module_state[2] = ((uint32_t)md.ram16(LEVEL) << 8 | md.ram16(AREA)) + 1;
         }
         if (E == 0) return;
+    }
+
+    std::vector<AchievementDef> achievements() const override {
+        return {
+            {"woi_forest", "Out of the Box", "Clear the Enchanted Forest.", false, 0},
+            {"woi_mountains", "Mountain Mover", "Clear the Rocky Mountains.", false, 0},
+            {"woi_sea", "Sea Legs", "Clear Under the Sea.", false, 0},
+            {"woi_house", "Giant Steps", "Clear the Giant House.", false, 0},
+            {"woi_magician", "Curtain Call", "Defeat the Magician.", false, 0},
+            {"woi_mickey", "Mickey's Magic", "Finish the game as Mickey, from a new game.", false, 0},
+            {"woi_donald", "Donald's Magic", "Finish the game as Donald, from a new game.", false, 0},
+            {"woi_together", "Better Together", "Finish the game in two-player mode, from a new game.", false, 0},
+            {"woi_spotless", "Spotless Spell", "Beat any boss without losing a heart.", false, 0},
+            {"woi_carpet", "Magic Carpet Ace", "Clear the magic carpet ride without a hit.", false, 0},
+            {"woi_deck", "Full Deck", "Collect all 52 playing cards.", false, 52},
+            {"woi_hearts", "Heart of Gold", "Fill all 8 hearts.", false, 0},
+            {"woi_cape", "Cape Crusader", "Defeat 3 enemies with one swish of the cape.", true, 0},
+            {"woi_magic", "Hocus Pocus", "Cast a spell at a magic spot.", false, 0},
+            {"woi_hand", "Lend a Hand", "In two-player mode, help your partner up a ledge.", true, 0},
+            {"woi_detour", "Donald's Detour", "Play a stage only Donald's route reaches.", true, 0},
+        };
+    }
+
+    // ---- Achievements: the rules and their verification on real gameplay are in tools/qa/ach/woi (findings.md,
+    // ach_rules.py, verify_*.py). Indices follow achievements().
+    enum { A_FOREST, A_MOUNTAINS, A_SEA, A_HOUSE, A_MAGICIAN, A_MICKEY, A_DONALD, A_TOGETHER, A_SPOTLESS, A_CARPET,
+           A_DECK, A_HEARTS, A_CAPE, A_MAGIC, A_HAND, A_DETOUR };
+    enum { S_FIRED, S_BOSS_LEVEL, S_BOSS_OK, S_CARPET, S_CARPET_OK, S_SWISH };   // S_SWISH, S_SWISH + 1: per player
+    // run bits: how the playthrough started (latched when the game leaves the options board for mode 1)
+    enum : uint32_t { R_NEWGAME = 1, R_PASSWORD = 2, R_PMODE_SHIFT = 2, R_ALONE = 16 };
+
+    void achievement_frame(const MegaDrive& md, AchievementCtx& c) const override {
+        if (c.prev.size() != 0x10000) return;
+        const RamView s{md.ram}, p{c.prev.data()};
+        auto fire = [&](int i) {
+            if (c.scratch[S_FIRED] & (1 << i)) return;
+            c.scratch[S_FIRED] |= 1 << i;
+            c.unlocked.push_back(i);
+        };
+        constexpr uint32_t MODE = 0xFFFFD0, PMODE = 0xFFFFD8, LEVEL = 0xFFFFDA, AREA = 0xFFFFDE, DEMO = 0xFFFD5E,
+                           TRIES = 0xFFFD52, CARDS = 0xFFFCC2, MUSIC = 0xFFFD2B, SCREEN_CLEAR = 0xFFFC72;
+        constexpr uint32_t PLAYER[2] = {0xFFA000, 0xFFA080};
+        enum { M_NEWGAME = 1, M_LOAD = 2, M_PLAY = 3, M_PAUSE = 0x0C, M_BOARD = 0x0D, M_ALONE = 0x10, M_ENDING = 0x11,
+               M_CHAPTER = 0x12 };
+        auto mode = [&](const RamView& r) { return r.w(MODE) & 0x7F; };
+        // real gameplay: mode 3 (the demo plays in mode $0A), not the demo, and player 1's object in place (the
+        // game-over RAM clear zeroes everything while the mode still reads 3 for a frame or two)
+        auto in_play = [&](const RamView& r) { return mode(r) == M_PLAY && r.b(DEMO) == 0 && r.w(PLAYER[0]) == 1; };
+        auto state = [](const RamView& r, uint32_t o) { return r.w(o + 2) & 0x7FFF; };
+        const int sm = mode(s), pm = mode(p);
+        const int level = s.w(LEVEL), area = s.w(AREA);
+        const int np = (s.b(PMODE) & 2) ? 2 : 1, pnp = (p.b(PMODE) & 2) ? 2 : 1;
+
+        // how the run started: new game (level 1, area 0, from the board), password, continue (keeps it)
+        if (sm == M_NEWGAME && pm != M_NEWGAME && pm == M_BOARD) {
+            const bool fresh = level == 1 && area == 0 && s.w(0xFFFFE0) == 0;
+            c.run_bits = (fresh ? R_NEWGAME : R_PASSWORD) | ((uint32_t)(s.b(PMODE) & 3) << R_PMODE_SHIFT);
+        }
+        if (sm == M_ALONE && pm != M_ALONE) c.run_bits |= R_ALONE;   // a 2P game dropped to 1P
+
+        // level clears (chapter book after a boss) and the ending
+        if (pm == M_PLAY && sm == M_CHAPTER && level >= 1 && level <= 4) fire(A_FOREST + level - 1);
+        if (pm == M_PLAY && sm == M_ENDING) {
+            fire(A_MAGICIAN);
+            const uint32_t who = s.b(PMODE) & 3;
+            if (c.run_counts && (c.run_bits & R_NEWGAME) && ((c.run_bits >> R_PMODE_SHIFT) & 3) == who && !(c.run_bits & R_ALONE))
+                fire(who == 1 ? A_MICKEY : who == 0 ? A_DONALD : A_TOGETHER);
+        }
+
+        auto lost_heart = [&]() {
+            for (int i = 0; i < np; i++) {
+                const uint32_t o = PLAYER[i];
+                if ((i < pnp && s.b(o + 0x38) < p.b(o + 0x38)) || s.b(o + 0x6D)) return true;
+            }
+            return false;
+        };
+        // Spotless Spell: boss area entered -> boss beaten (treasure jingle $99; the ending for level 5), no heart lost
+        static const int kBossArea[6] = {-1, 0x05, 0x11, 0x08, 0x10, 0x19};
+        const bool boss_area = level >= 1 && level <= 5 && kBossArea[level] == area;
+        if (in_play(s) && boss_area && (c.scratch[S_BOSS_LEVEL] == 0 || pm == M_LOAD)) {
+            c.scratch[S_BOSS_LEVEL] = level;
+            c.scratch[S_BOSS_OK] = 1;
+        }
+        if (c.scratch[S_BOSS_LEVEL]) {
+            if ((sm == M_PLAY || sm == M_PAUSE) && boss_area) {
+                if (lost_heart()) c.scratch[S_BOSS_OK] = 0;
+                if (sm == M_PLAY && s.b(MUSIC) == 0x99 && p.b(MUSIC) != 0x99) {
+                    if (c.scratch[S_BOSS_OK]) fire(A_SPOTLESS);
+                    c.scratch[S_BOSS_LEVEL] = 0;
+                }
+            } else if (sm == M_ENDING && c.scratch[S_BOSS_LEVEL] == 5) {
+                if (c.scratch[S_BOSS_OK]) fire(A_SPOTLESS);
+                c.scratch[S_BOSS_LEVEL] = 0;
+            } else if (sm != M_PLAY && sm != M_PAUSE) {
+                c.scratch[S_BOSS_LEVEL] = 0;   // death restart, game over, left
+            }
+        }
+
+        // Magic Carpet Ace: boarding the carpet (level 2 area 0) -> the area exit at the end of the ride, no heart lost
+        auto riding = [](int st) { return st == 0x0E || st == 0x0F; };
+        if (in_play(s) && level == 2 && area == 0 && !c.scratch[S_CARPET]) {
+            bool now = false, before = false;
+            for (int i = 0; i < np; i++)
+                if (riding(state(s, PLAYER[i]))) {
+                    now = true;
+                    if (i < pnp && riding(state(p, PLAYER[i]))) before = true;
+                }
+            if (now && !before) { c.scratch[S_CARPET] = 1; c.scratch[S_CARPET_OK] = 1; }
+        }
+        if (c.scratch[S_CARPET]) {
+            if (sm == M_PLAY || sm == M_PAUSE) {
+                if (lost_heart()) c.scratch[S_CARPET_OK] = 0;
+            } else {
+                if (pm == M_PLAY && sm == M_LOAD && level == 2 && area != 0 && c.scratch[S_CARPET_OK]) fire(A_CARPET);
+                c.scratch[S_CARPET] = 0;
+            }
+        }
+
+        if (!(in_play(s) && in_play(p))) return;
+
+        // Full Deck: the card counter wraps (52nd card: +1 try, back to 0)
+        if (s.w(CARDS) < p.w(CARDS) && s.w(TRIES) >= 1) fire(A_DECK);
+        if (s.w(CARDS) > p.w(CARDS)) c.progress.push_back({A_DECK, s.w(CARDS)});
+        // Heart of Gold (checked every frame: the chapter book's +1 heart lands outside gameplay)
+        for (int i = 0; i < np; i++)
+            if (s.b(PLAYER[i] + 0x38) >= 8) fire(A_HEARTS);
+        // Hocus Pocus: bit 7 of a magic-spot flag goes up (the spell is cast)
+        for (uint32_t a = 0xFFFC7B; a <= 0xFFFC7E; a++)
+            if ((s.b(a) & 0x80) && !(p.b(a) & 0x80)) fire(A_MAGIC);
+        // Donald's Detour: the Beanstalk (level 1 area 1), only on Donald's route
+        if (level == 1 && area == 1) fire(A_DETOUR);
+
+        // Cape Crusader: three defeats during one swish of the cape
+        auto cape = [](int st) { return st == 0x24 || st == 0x25 || st == 0x54 || st == 0x55 || st == 0x7C || st == 0x7D; };
+        for (int i = 0; i < np; i++) {
+            const uint32_t o = PLAYER[i];
+            const int st = state(s, o), was = i < pnp ? state(p, o) : -1;
+            int& sw = c.scratch[S_SWISH + i];   // defeats in the current swish + 1 (0: no swish)
+            if (cape(st) && (!cape(was) || s.w(o + 6) < p.w(o + 6))) sw = 1;   // a new swish
+            else if (!cape(st) && !cape(was)) sw = 0;                            // (kept one frame after it)
+        }
+        auto defeated_type = [](int t) { return t == 0x05 || t == 0x5A || t == 0x5B || t == 0x5C || t == 0xF2; };
+        auto defeated_state = [](int t, int st) {
+            return ((t == 55 || t == 160) && (st == 3 || st == 4)) || (t == 203 && (st == 5 || st == 6));
+        };
+        int kill_x[24], nk = 0, vanished[16], nv = 0, copies240 = 0;
+        static const struct { uint32_t base; int n; } kGroups[] = {{0xFF9C00, 16}, {0xFF9000, 48}, {0xFFA100, 22}};
+        for (const auto& g : kGroups)
+            for (int k = 0; k < g.n; k++) {
+                const uint32_t a = g.base + (uint32_t)k * 0x40;
+                const int t0 = p.w(a), st0 = p.w(a + 2) & 0x7FFF, t1 = s.w(a), st1 = s.w(a + 2) & 0x7FFF;
+                if (t0 == 240 && st0 != 4 && st0 != 5 && t1 != 240 && nv < 16) vanished[nv++] = p.sw(a + 0x10);
+                if (t1 == 240 && st1 == 4 && !(t0 == 240 && st0 == 4)) copies240++;
+                const bool kill = (defeated_type(t1) && !defeated_type(t0) && t0 != 0) ||
+                                  (t1 == t0 && defeated_state(t0, st1) && !defeated_state(t0, st0)) ||
+                                  (t1 == 168 && st1 == 3 && !(t0 == 168 && st0 == 3));
+                if (kill && nk < 24) kill_x[nk++] = s.sw(a + 0x10);
+            }
+        for (int k = 0; k < nv && k < copies240 && nk < 24; k++) kill_x[nk++] = vanished[k];
+        if (s.b(SCREEN_CLEAR) || p.b(SCREEN_CLEAR)) nk = 0;   // the screen-clearing magic item, not the cape
+        for (int k = 0; k < nk; k++) {
+            int best = -1;
+            for (int i = 0; i < np; i++)   // credit the swishing player (the nearer one if both swish)
+                if (c.scratch[S_SWISH + i] &&
+                    (best < 0 || std::abs(s.sw(PLAYER[i] + 0x10) - kill_x[k]) < std::abs(s.sw(PLAYER[best] + 0x10) - kill_x[k])))
+                    best = i;
+            if (best < 0) continue;
+            if (++c.scratch[S_SWISH + best] - 1 >= 3) fire(A_CAPE);
+        }
+
+        // Lend a Hand: in 2P, the climber reaches the top of the partner's rope (or the climb ends at the partner's height)
+        if (np == 2) {
+            for (int i = 0; i < 2; i++) {
+                const uint32_t o = PLAYER[i], other = PLAYER[1 - i];
+                const int st = state(s, o), was = i < pnp ? state(p, o) : -1;
+                const bool top = (st == 0x22 || st == 0x23) && !(was == 0x22 || was == 0x23);
+                const bool ended = (was == 0x20 || was == 0x21) && !(st == 0x20 || st == 0x21) && s.sw(o + 0x14) <= s.sw(other + 0x14) + 8;
+                if (top || ended) fire(A_HAND);
+            }
+        }
     }
 
     std::vector<CheatEntry> cheats() const override {

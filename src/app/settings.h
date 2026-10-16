@@ -56,6 +56,8 @@ struct Settings {
     // Hold-to-use speed controls (keyboard Tab / R, pad right / left trigger)
     bool        fast_forward = true;
     bool        rewind = true;
+    // Achievements on: they can be earned, and cheats, rewind and fast forward are off
+    bool        achievements = true;
 
     // Touch screens (Android): on-screen pad 0 = when the screen is touched, 1 = always, 2 = never; opacity %
     int         touch_mode = 0;

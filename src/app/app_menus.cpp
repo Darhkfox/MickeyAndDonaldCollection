@@ -29,7 +29,11 @@ void App::open_pause_menu() {
     if (!m->levels().empty())
         p.items.push_back(MenuItem::action("Level Select", [this]() { menu_.push(level_page()); }, "Jump straight to any level."));
     if (!m->cheats().empty())
-        p.items.push_back(MenuItem::action("Cheats", [this]() { menu_.push(cheats_page()); }, "Toggle cheats. They apply immediately."));
+        p.items.push_back(MenuItem::action("Cheats", [this]() { menu_.push(settings_.achievements ? cheats_locked_page() : cheats_page()); },
+                                           settings_.achievements ? "Off while achievements are on (Options)."
+                                                                  : "Toggle cheats. They apply immediately."));
+    p.items.push_back(MenuItem::action("Achievements", [this]() { menu_.push(achievements_page(current_)); },
+                                       "This game's achievements and the collection's."));
     if (!m->sounds().empty()) {
         p.items.push_back(MenuItem::action("Sound Test", [this]() { open_jukebox(current_, true); },
                                            "Play any music track or sound effect from the game."));
@@ -43,7 +47,12 @@ void App::open_pause_menu() {
     p.items.push_back(MenuItem::action("Credits", [this]() { open_credits(false); }));
     p.items.push_back(MenuItem::header("System"));
     p.items.push_back(MenuItem::action("Reset Game", [this]() {
-        menu_.confirm("Reset the game?", [this]() { session_->power_on(); rewind_.clear(); menu_.close(); }, "Unsaved progress will be lost.");
+        menu_.confirm("Reset the game?", [this]() {
+            session_->power_on();
+            rewind_.clear();
+            ach_new_run(settings_.achievements);
+            menu_.close();
+        }, "Unsaved progress will be lost.");
     }));
     p.items.push_back(MenuItem::action("Return to Launcher", [this]() {
         menu_.confirm("Return to the launcher?", [this]() { back_to_launcher(); }, "Unsaved progress will be lost.");
@@ -68,13 +77,21 @@ void App::open_options_menu(bool from_launcher) {
         p.items.push_back(MenuItem::action(from_launcher ? "Controls - Player 2 (World of Illusion)" : "Controls - Player 2",
                                            [this]() { menu_.push(controls_page(1)); },
                                            "Second player's keys and gamepad (World of Illusion is the only 2-player game)."));
+    p.items.push_back(MenuItem::header("Achievements"));
+    p.items.push_back(MenuItem::toggle("Achievements", [this]() { return settings_.achievements; },
+                                       [this](bool v) { set_achievements(v); },
+                                       "On: achievements can be earned, and cheats, rewind and fast forward are off. Off: the reverse."));
     p.items.push_back(MenuItem::header("Speed"));
-    p.items.push_back(MenuItem::toggle("Fast Forward", [this]() { return settings_.fast_forward; },
-                                       [this](bool v) { settings_.fast_forward = v; },
-                                       "Hold Tab or the right trigger to run the game at 4x speed."));
-    p.items.push_back(MenuItem::toggle("Rewind", [this]() { return settings_.rewind; },
-                                       [this](bool v) { settings_.rewind = v; if (!v) rewind_.clear(); },
-                                       "Hold R or the left trigger to step back through the last minute of play."));
+    MenuItem ff = MenuItem::toggle("Fast Forward", [this]() { return settings_.fast_forward && !settings_.achievements; },
+                                   [this](bool v) { settings_.fast_forward = v; },
+                                   "Hold Tab or the right trigger to run the game at 4x speed.");
+    ff.enabled = [this]() { return !settings_.achievements; };
+    p.items.push_back(ff);
+    MenuItem rw = MenuItem::toggle("Rewind", [this]() { return settings_.rewind && !settings_.achievements; },
+                                   [this](bool v) { settings_.rewind = v; if (!v) rewind_.clear(); },
+                                   "Hold R or the left trigger to step back through the last minute of play.");
+    rw.enabled = [this]() { return !settings_.achievements; };
+    p.items.push_back(rw);
 #ifdef __ANDROID__
     p.items.push_back(MenuItem::header("Touch screen"));
     p.items.push_back(MenuItem::choice("On-screen Controls", {"When touched", "Always", "Off"}, [this]() { return settings_.touch_mode; },
@@ -319,7 +336,12 @@ MenuPage App::level_page() {
         std::string name = lv[i].name;
         MenuItem it = MenuItem::action(name, [this, i, name, group]() {
             menu_.confirm("Start " + name + "?", [this, i]() {
-                if (session_->start_level(i, level_variant_)) { rewind_.clear(); menu_.close(); }
+                if (session_->start_level(i, level_variant_)) {
+                    rewind_.clear();
+                    ach_new_run(false);
+                    ach_ctx_.level_select = true;
+                    menu_.close();
+                }
                 else menu_.toast("Could not start that level");
                 block_game_input_ = true;
             }, group + ". Current progress will be lost.");

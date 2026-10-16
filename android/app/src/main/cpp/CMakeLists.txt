@@ -29,6 +29,8 @@ add_library(main SHARED
   ${SRC}/game/woi.cpp
   ${SRC}/app/app.cpp
   ${SRC}/app/app_android.cpp
+  ${SRC}/app/app_achievements.cpp
+  ${SRC}/app/achievements.cpp
   ${SRC}/app/app_menus.cpp
   ${SRC}/app/launcher.cpp
   ${SRC}/app/jukebox.cpp

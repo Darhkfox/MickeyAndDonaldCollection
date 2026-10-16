@@ -33,6 +33,8 @@ add_executable(DisneyClassics WIN32
     src/app/main.cpp
     src/app/app.cpp
     src/app/app_win.cpp
+    src/app/app_achievements.cpp
+    src/app/achievements.cpp
     src/app/app_menus.cpp
     src/app/launcher.cpp
     src/app/jukebox.cpp

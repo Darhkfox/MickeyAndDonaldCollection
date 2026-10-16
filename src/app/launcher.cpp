@@ -6,12 +6,12 @@
 
 namespace {
 std::string narrow(const std::wstring& w) { return to_utf8(w); }
-const int kButtonCount = 4;
+const int kButtonCount = 5;
 #ifdef __ANDROID__
 // Android apps don't quit from a menu (Back on the launcher still offers it); ROMs come in through the picker.
-const char* kButtons[kButtonCount] = {"Options", "Music Player", "Credits", "Add ROMs"};
+const char* kButtons[kButtonCount] = {"Options", "Achievements", "Music Player", "Credits", "Add ROMs"};
 #else
-const char* kButtons[kButtonCount] = {"Options", "Music Player", "Credits", "Quit"};
+const char* kButtons[kButtonCount] = {"Options", "Achievements", "Music Player", "Credits", "Quit"};
 #endif
 
 // Shortens a file name to `max_w` by cutting the end of its stem ("World of Illusion Starring Mickey<...>.bin").
@@ -31,13 +31,13 @@ std::string elide_name(Video& v, FontId font, const std::string& name, float max
 }
 
 void App::update_launcher(const UiInput& ui, double dt) {
-    const int N = kGameCount;          // cards 0..N-1, buttons N..N+3
+    const int N = kGameCount;          // cards 0..N-1, buttons N..N+4
     poll_roms(dt);
     int& s = launcher_sel_;
     if (s < N) launcher_last_card_ = s;
     if (ui.left && s != 0 && s != N) s--;
     if (ui.right && s != N - 1 && s != N + kButtonCount - 1) s++;
-    if (ui.down && s < N) s = N + 1;
+    if (ui.down && s < N) s = N + 2;
     if (ui.up && s >= N) s = launcher_last_card_;
     bool go = ui.confirm;
     if (ui.tap)   // touch: a card or button is chosen and used at once
@@ -49,7 +49,8 @@ void App::update_launcher(const UiInput& ui, double dt) {
     if (go) {
         if (s < N) launch(s);
         else if (s == N) open_options_menu(true);
-        else if (s == N + 1) {
+        else if (s == N + 1) menu_.open(achievements_page(-1));
+        else if (s == N + 2) {
             int g = -1;
             for (int k = 0; k < N && g < 0; k++) {
                 int c = (launcher_last_card_ + k) % N;
@@ -57,7 +58,7 @@ void App::update_launcher(const UiInput& ui, double dt) {
             }
             if (g >= 0) open_jukebox(g, false);
             else menu_.toast("No ROMs found");
-        } else if (s == N + 2) open_credits(true);
+        } else if (s == N + 3) open_credits(true);
 #ifdef __ANDROID__
         else pick_roms();
 #else
@@ -203,14 +204,19 @@ void App::draw_launcher() {
     float bws[kButtonCount], total = 0;
     for (int i = 0; i < kButtonCount; i++) { bws[i] = video_.measure_text(FontId::Body, kButtons[i]) + bh * 1.4f; total += bws[i]; }
     float bgap = W * 0.02f;
+    // the row shrinks to fit narrow (4:3, portrait) windows
+    const float bs = std::min(1.0f, W * 0.96f / (total + bgap * (kButtonCount - 1)));
+    for (float& w : bws) w *= bs;
+    total *= bs;
+    bgap *= bs;
     float bx = (W - total - bgap * (kButtonCount - 1)) * 0.5f;
     for (int i = 0; i < kButtonCount; i++) {
         float an = launcher_anim_[N + i];
-        Rect br = {bx, by, bws[i], bh};
+        Rect br = {bx, by + bh * (1.0f - bs) * 0.5f, bws[i], bh * bs};
         launcher_hit_[N + i] = br;
-        video_.fill_round_rect(br, bh * 0.5f, lerp_color(0xFF1C2230, acc, an * 0.85f));
-        video_.draw_text(FontId::Body, br.x + br.w * 0.5f, br.y + (bh - video_.line_height(FontId::Body)) * 0.5f, kButtons[i],
-                         an > 0.5f ? 0xFF10131A : 0xFFD8DDE8, Align::Center);
+        video_.fill_round_rect(br, br.h * 0.5f, lerp_color(0xFF1C2230, acc, an * 0.85f));
+        video_.draw_text(FontId::Body, br.x + br.w * 0.5f, br.y + (br.h - video_.line_height(FontId::Body, bs)) * 0.5f, kButtons[i],
+                         an > 0.5f ? 0xFF10131A : 0xFFD8DDE8, Align::Center, bs);
         bx += bws[i] + bgap;
     }
 #ifdef __ANDROID__

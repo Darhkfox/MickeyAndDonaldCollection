@@ -82,6 +82,7 @@ int App::run(HINSTANCE inst, int show) {
 
     find_game_roms();
     apply_settings();
+    ach_startup();
     if (settings_.fullscreen) set_fullscreen(true);
     for (int g = 0; g < kGameCount; g++)
         if (settings_.last_game == games_[g].module->id()) launcher_sel_ = launcher_last_card_ = g;

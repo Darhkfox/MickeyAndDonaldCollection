@@ -22,7 +22,7 @@ void Session::apply_settings(const Settings& s) {
     c.ext = wide_ext(s.widescreen);
     if (module_ && c.ext > module_->max_ext()) c.ext = module_->max_ext();   // e.g. World of Illusion tops out at 2:1
     c.hud_anchor = s.hud_anchor;
-    if (module_) {
+    if (module_ && !s.achievements) {   // achievements on: no cheats
         auto g = s.cheats.find(module_->id());
         if (g != s.cheats.end()) c.cheats = g->second;
     }
@@ -132,20 +132,22 @@ void Session::mix_audio(std::vector<int16_t>& out, double adjust) {
     mixer_.process(md_->audio.data(), md_->audio_frames, adjust, out);
 }
 
-std::vector<uint8_t> Session::save_state() {
+std::vector<uint8_t> Session::save_state(const std::string& extra) {
     std::vector<uint8_t> s = md_->save_state();
     // Append a tag: the module id (states from another game are rejected) and the configuration the ROM ran
-    // with ("qs|108|cheat,cheat"), so a load can restore exactly that ROM before moving to the current settings.
+    // with ("qs|108|cheat,cheat"), so a load can restore exactly that ROM before moving to the current settings;
+    // then the app's note, if any ("|a1.00000000").
     std::string tag = module_ ? module_->id() : "";
     tag += "|" + std::to_string(cfg_.ext) + "|";
     for (const auto& kv : cfg_.cheats)
-        if (kv.second && tag.size() + kv.first.size() < 250) tag += kv.first + ",";
+        if (kv.second && tag.size() + kv.first.size() + extra.size() < 240) tag += kv.first + ",";
+    if (!extra.empty()) tag += "|" + extra;
     s.insert(s.end(), tag.begin(), tag.end());
     s.push_back((uint8_t)tag.size());
     return s;
 }
 
-bool Session::load_state(const std::vector<uint8_t>& data) {
+bool Session::load_state(const std::vector<uint8_t>& data, std::string* extra) {
     if (data.empty()) return false;
     size_t idlen = data.back();
     if (data.size() < idlen + 1) return false;
@@ -159,9 +161,11 @@ bool Session::load_state(const std::vector<uint8_t>& data) {
     GameConfig saved = want_;
     if (bar != std::string::npos) {
         size_t bar2 = tag.find('|', bar + 1);
+        size_t bar3 = bar2 == std::string::npos ? std::string::npos : tag.find('|', bar2 + 1);
         saved.ext = std::clamp(atoi(tag.c_str() + bar + 1), 0, module_->max_ext());
         saved.cheats.clear();
-        std::string list = bar2 == std::string::npos ? "" : tag.substr(bar2 + 1);
+        std::string list = bar2 == std::string::npos ? "" : tag.substr(bar2 + 1, bar3 == std::string::npos ? std::string::npos : bar3 - bar2 - 1);
+        if (extra) *extra = bar3 == std::string::npos ? "" : tag.substr(bar3 + 1);
         for (size_t a = 0; a < list.size();) {
             size_t b = list.find(',', a);
             if (b == std::string::npos) b = list.size();

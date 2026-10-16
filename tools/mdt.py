@@ -359,3 +359,61 @@ class ModuleMD(MD):
 
 def ramsearch_snapshot(md):
     return bytes(md.ram)
+
+
+# ---- the port's achievement detectors, run on RAM images (src/game/<game>.cpp achievement_frame) ----
+_HAS_ACH = hasattr(_dll, 'mdt_ach_create')
+if _HAS_ACH:
+    _dll.mdt_ach_create.restype = C.c_void_p
+    _dll.mdt_ach_create.argtypes = [C.c_char_p]
+    _dll.mdt_ach_destroy.argtypes = [C.c_void_p]
+    _dll.mdt_ach_reset.argtypes = [C.c_void_p, C.c_int, C.c_uint32, C.c_char_p]
+    _dll.mdt_ach_step.argtypes = [C.c_void_p, C.c_char_p, C.POINTER(C.c_int), C.c_int]
+    _dll.mdt_ach_run_bits.restype = C.c_uint32
+    _dll.mdt_ach_run_bits.argtypes = [C.c_void_p]
+    _dll.mdt_ach_list.argtypes = [C.c_void_p, C.c_char_p, C.c_int]
+    _dll.mdt_ach_set_run.argtypes = [C.c_void_p, C.c_int, C.c_uint32]
+    _dll.mdt_ach_level_select.argtypes = [C.c_void_p]
+
+
+class PortAchievements:
+    """The port's C++ achievement checks for one game, fed one 64 KB RAM image per frame.
+    step(ram) returns events: ('unlock', id) / ('count', id) / ('mark', id, bit) / ('progress', id, n)."""
+
+    def __init__(self, game_id, run_counts=True, run_bits=0, ram=None):
+        if not _HAS_ACH:
+            raise RuntimeError('achievement support not available in this DLL')
+        self.h = _dll.mdt_ach_create(game_id.encode())
+        buf = C.create_string_buffer(8192)
+        n = _dll.mdt_ach_list(self.h, buf, 8192)
+        self.ids = [l.split('|')[0] for l in buf.value.decode().splitlines()][:n]
+        self.reset(run_counts, run_bits, ram)
+        self._out = (C.c_int * 64)()
+
+    def __del__(self):
+        if getattr(self, 'h', None):
+            _dll.mdt_ach_destroy(self.h)
+            self.h = None
+
+    def reset(self, run_counts=True, run_bits=0, ram=None):
+        _dll.mdt_ach_reset(self.h, 1 if run_counts else 0, run_bits, bytes(ram) if ram is not None else None)
+
+    def step(self, ram):
+        n = _dll.mdt_ach_step(self.h, bytes(ram), self._out, 64)
+        ev = []
+        for v in self._out[:n]:
+            kind, value, idx = v >> 16, (v >> 8) & 0xFF, v & 0xFF
+            aid = self.ids[idx] if idx < len(self.ids) else str(idx)
+            ev.append(('unlock', aid) if kind == 0 else ('count', aid) if kind == 1 else
+                      ('mark', aid, value) if kind == 2 else ('progress', aid, value))
+        return ev
+
+    def run_bits(self):
+        return _dll.mdt_ach_run_bits(self.h)
+
+    def set_run(self, run_counts=True, run_bits=0):
+        _dll.mdt_ach_set_run(self.h, 1 if run_counts else 0, run_bits)
+
+    def level_select(self):
+        """a level was just started with the port's level select (as the app does after start_level)"""
+        _dll.mdt_ach_level_select(self.h)

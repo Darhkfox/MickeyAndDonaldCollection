@@ -164,15 +164,21 @@ void App::frame(double dt) {
     rewind_held = rewind_held || touch_.held(TouchControls::BtnRewind);
     ff_held = ff_held || touch_.held(TouchControls::BtnFF);
     touch_.in_game = in_play;
-    touch_.show_ff = settings_.fast_forward;
-    touch_.show_rewind = settings_.rewind;
+    touch_.show_ff = settings_.fast_forward && !settings_.achievements;
+    touch_.show_rewind = settings_.rewind && !settings_.achievements;
     touch_.layout((float)video_.width(), (float)video_.height());
     menu_.touch_ui = jukebox_.touch_ui = touch_active_;
     if (touch_active_) menu_.footer = "Tap an item to choose    Drag to scroll    Back to return";
     if (picking_roms_) poll_pick();
 #endif
-    rewinding_ = in_play && settings_.rewind && rewind_held;
-    fast_forward_ = in_play && !rewinding_ && settings_.fast_forward && ff_held;
+    // With achievements on, rewind and fast forward are off; using them says so (now and then).
+    if (ach_locked_note_ > 0) ach_locked_note_ -= (float)dt;
+    if (in_play && settings_.achievements && ((rewind_held && settings_.rewind) || (ff_held && settings_.fast_forward))) {
+        if (ach_locked_note_ <= 0) menu_.toast("Rewind and fast forward are off while achievements are on (Options)", 3.0f);
+        ach_locked_note_ = 4.0f;
+    }
+    rewinding_ = in_play && settings_.rewind && !settings_.achievements && rewind_held;
+    fast_forward_ = in_play && !rewinding_ && settings_.fast_forward && !settings_.achievements && ff_held;
     if (!rewinding_) rewind_acc_ = 1.0;   // the first rewind step comes at once
 
     // How many emulated frames this display frame: lock-step with a ~60 Hz vsync'd display,
@@ -267,7 +273,7 @@ void App::frame(double dt) {
         draw_game_view(0, *session_, {0, 0, W, H}, 1.0f, 0.0f);
 #ifdef __ANDROID__
         if (!menu_.active() && settings_.touch_mode != 2)
-            touch_.draw(video_, settings_.touch_opacity / 100.0f, settings_.fast_forward, settings_.rewind);
+            touch_.draw(video_, settings_.touch_opacity / 100.0f, touch_.show_ff, touch_.show_rewind);
 #endif
     } else {
         draw_launcher();
@@ -275,6 +281,7 @@ void App::frame(double dt) {
     menu_.accent = accent();
     if (!jukebox_.active()) menu_.draw(video_, (float)time_);   // the menu reappears when the player closes
     menu_.draw_toasts(video_, (float)dt, jukebox_.active() || mode_ != Mode::Playing || menu_.active());
+    draw_ach_banners((float)dt);
     if (mode_ == Mode::Playing && session_ && !menu_.active() && !jukebox_.active() && (rewinding_ || fast_forward_))
         video_.draw_text(FontId::Small, H * 0.02f, H * 0.01f, rewinding_ ? "\xE2\x97\x80\xE2\x97\x80" : "\xE2\x96\xB6\xE2\x96\xB6",
                          0xFFFFFFC0, Align::Left);
@@ -330,6 +337,7 @@ bool App::load_script(const std::wstring& path) {
         else if (c == "loadstate") script_.push_back({fr, 0, 8, a});  // <dir>\<a>.state into the running game
         else if (c == "pads") script_.push_back({fr, 0, 9, a});       // <dir>\<a>.pads: uint16 p1, p2 per frame
         else if (c == "set") script_.push_back({fr, 0, 10, a});       // key=value: widescreen, color, filter, hud_anchor
+        else if (c == "award") script_.push_back({fr, 0, 11, a});     // an achievement id (tests of the pop-up / pages)
     }
     std::stable_sort(script_.begin(), script_.end(), [](const ScriptStep& x, const ScriptStep& y) { return x.frame < y.frame; });
     return true;
@@ -362,6 +370,14 @@ void App::run_script() {
             std::vector<uint8_t> d;
             read_file(path_join(autotest_dir_, from_utf8(s.arg) + L".state"), d);
             if (session_ && !d.empty() && session_->load_state(d)) { rewind_.clear(); frame_acc_ = 0; }
+            break;
+        }
+        case 11: {
+            std::string name = s.arg;
+            for (auto& g : games_)
+                for (const AchievementDef& d : g.module->achievements()) if (s.arg == d.id) name = d.name;
+            for (const AchievementDef& d : collection_achievements()) if (s.arg == d.id) name = d.name;
+            ach_award(s.arg, name);
             break;
         }
         case 10: {
@@ -408,7 +424,8 @@ void App::run_game_frames(int count, bool with_audio) {
         }
         session_->run_frame(p1, p2);
         stat_runs_++;
-        if (settings_.rewind && ++rewind_tick_ >= 2) {
+        if (settings_.achievements) ach_frame();
+        if (settings_.rewind && !settings_.achievements && ++rewind_tick_ >= 2) {
             rewind_tick_ = 0;
             rewind_.push(session_->save_state());
         }
@@ -485,6 +502,7 @@ void App::launch(int g) {
     session_->open(games_[g].module.get(), games_[g].rom.data);
     session_->apply_settings(settings_);
     session_->power_on();
+    ach_new_run(settings_.achievements);
     current_ = g;
     mode_ = Mode::Playing;
     menu_.close();
@@ -508,7 +526,7 @@ std::wstring App::save_path(int slot) {
 
 void App::quick_save() {
     if (!session_) return;
-    std::vector<uint8_t> st = session_->save_state();
+    std::vector<uint8_t> st = session_->save_state(ach_state_tag());
     if (write_file(save_path(state_slot_), st.data(), st.size())) {
         menu_.toast("State saved to slot " + std::to_string(state_slot_));
     } else {
@@ -520,7 +538,9 @@ void App::quick_load() {
     if (!session_) return;
     std::vector<uint8_t> st;
     if (!read_file(save_path(state_slot_), st)) { menu_.toast("Slot " + std::to_string(state_slot_) + " is empty"); return; }
-    if (session_->load_state(st)) {
+    std::string extra;
+    if (session_->load_state(st, &extra)) {
+        ach_load_tag(extra);
         rewind_.clear();
         menu_.toast("State loaded from slot " + std::to_string(state_slot_));
     } else {

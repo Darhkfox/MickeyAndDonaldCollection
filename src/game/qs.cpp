@@ -1,5 +1,6 @@
 // QuackShot Starring Donald Duck (World, REV 00) - enhancement module.
 // Addresses and techniques: docs/re_qs_game.md, docs/re_qs_wide.md.
+#include <cstdlib>
 #include "game.h"
 #include "common.h"
 #include "../core/md.h"
@@ -574,6 +575,176 @@ public:
         if (md.vdp.reg[18] == 0x98) {
             info.mask_lines = 192;
             info.pillar_below = !cfg.hud_anchor;
+        }
+    }
+
+    std::vector<AchievementDef> achievements() const override {
+        return {
+            {"qs_herokey", "Key to Adventure", "Get the Hero Key.", false, 0},
+            {"qs_gyro", "Gyro's Gift", "Get Gyro's bubble gum.", false, 0},
+            {"qs_dracula", "Stake Out", "Defeat Dracula Duck.", false, 0},
+            {"qs_tiger", "Tiger Tamer", "Beat the Maharajah's tiger.", false, 0},
+            {"qs_ghosts", "Ghost Ship Gone", "Beat the Viking ghosts.", false, 0},
+            {"qs_pete", "Pete's Comeuppance", "Beat Pete.", false, 0},
+            {"qs_treasure", "The Great Duck Treasure", "Finish the game.", false, 0},
+            {"qs_steel", "Duck of Steel", "Clear a whole location without losing a heart.", false, 0},
+            {"qs_untouchable", "Untouchable Duck", "Finish the game from a new game without losing a life.", false, 0},
+            {"qs_minecart", "Mine Cart Maverick", "Ride Egypt's mine cart without a hit.", false, 0},
+            {"qs_quack", "Hot Under the Collar", "Eat 5 chilli peppers and go into Quack Attack.", false, 0},
+            {"qs_rampage", "Rampage", "Defeat 5 enemies in one Quack Attack.", true, 5},
+            {"qs_climber", "Wall Crawler", "Climb a wall using your plungers as steps.", false, 0},
+            {"qs_bird", "Hitching a Ride", "Hang on to a flying bird with the green plunger.", true, 0},
+            {"qs_gum", "Gum Shoe", "Blow up Transylvania's wall with bubble gum.", false, 0},
+            {"qs_popcorn", "Popcorn Hoarder", "Fill your popcorn to the maximum.", false, 95},
+            {"qs_flyer", "Frequent Flyer", "Take 15 plane trips.", false, 15},
+            {"qs_score", "Seven-Figure Duck", "Score 1,000,000 points.", false, 0},
+        };
+    }
+
+    // ---- Achievements: the rules and their verification on real gameplay are in tools/qa/ach/qs (findings.md,
+    // qs_rules.py, v_*.py). Indices follow achievements().
+    enum { A_HEROKEY, A_GYRO, A_DRACULA, A_TIGER, A_GHOSTS, A_PETE, A_TREASURE, A_STEEL, A_UNTOUCHABLE, A_MINECART,
+           A_QUACK, A_RAMPAGE, A_CLIMBER, A_BIRD, A_GUM, A_POPCORN, A_FLYER, A_SCORE };
+    enum { S_FIRED, S_STEEL_LOC, S_STEEL_CLEAN, S_CART, S_QKILLS, S_PLUNGER_Y, S_HAVE_PLUNGER_Y, S_ON_PLUNGER };
+    // run bits: the playthrough began with New Game (seen as mode $0C -> $0E); a life was lost since
+    enum : uint32_t { R_NEWGAME = 1, R_LIFE_LOST = 2 };
+
+    void achievement_frame(const MegaDrive& md, AchievementCtx& c) const override {
+        if (c.prev.size() != 0x10000) return;
+        const RamView s{md.ram}, p{c.prev.data()};
+        auto fire = [&](int i) {
+            if (c.scratch[S_FIRED] & (1 << i)) return;
+            c.scratch[S_FIRED] |= 1 << i;
+            c.unlocked.push_back(i);
+        };
+        constexpr uint32_t MODE = 0xFFFF19, DEMO = 0xFFEE50, LOC = 0xFF8F34, ROOM = 0xFF8F36, ENTRY = 0xFF8F74,
+                           MAP_STATE = 0xFFA344, POWER = 0xFF8F96, LIVES = 0xFF8F98, POPCORN = 0xFF8F90, QUACK = 0xFFEE62,
+                           SCORE = 0xFFEF34, PENDING = 0xFF8F7A, PLAYER = 0xFFA2C0, PY = 0xFFA2D4, AIRFLAGS = 0xFFEE03,
+                           ON_PLUNGER = 0xFFEE43, GUM_WALL = 0xFFEEF1;
+        enum { M_MAP = 2, M_MAP2LVL = 3, M_LOAD = 4, M_GAME = 5, M_PAUSE = 8, M_ENDING = 9, M_INTRO = 0x0C,
+               M_NEWGAME = 0x0E, M_GAMEOVER = 0x0F, M_CONTINUE = 0x10 };
+        // real gameplay: mode 5 (the attract demo runs in mode 7 with $EE50 set; pause is mode 8)
+        auto in_gameplay = [&](const RamView& r) { return r.b(MODE) == M_GAME && !r.b(DEMO); };
+        const int m = s.b(MODE), pm = p.b(MODE);
+        const bool play = in_gameplay(s) && in_gameplay(p);
+
+        // New Game (title -> menu -> intro -> init) / continue (game over -> CONTINUE -> init)
+        if (m == M_NEWGAME && pm != M_NEWGAME) {
+            if (pm == M_INTRO) { c.run_bits = R_NEWGAME; c.scratch[S_STEEL_LOC] = 0; }
+            else if (pm == M_CONTINUE) c.run_bits |= R_LIFE_LOST;
+        }
+        // story flags 0 -> $FF in a frame that started in gameplay (a continue restores them in mode $0E; the
+        // level select writes them on the map)
+        const bool flag_frame = (pm == M_GAME || pm == M_PAUSE) && !p.b(DEMO);
+        static const uint32_t kStory[6] = {0xFFEEE0, 0xFFEEE7, 0xFFEEF3, 0xFFEEEE, 0xFFEEED, 0xFFEEF8};
+        if (flag_frame) {
+            for (int i = 0; i < 6; i++)
+                if (!p.b(kStory[i]) && s.b(kStory[i])) fire(A_HEROKEY + i);
+            if (!p.b(GUM_WALL) && s.b(GUM_WALL) && s.w(LOC) == 3) fire(A_GUM);   // (every breakable block sets it)
+        }
+        // the figurine switches gameplay to the ending (mode 9)
+        if (m == M_ENDING && pm == M_GAME && !p.b(DEMO)) {
+            fire(A_TREASURE);
+            if (c.run_counts && (c.run_bits & R_NEWGAME) && !(c.run_bits & R_LIFE_LOST)) fire(A_UNTOUCHABLE);
+        }
+        if ((c.run_bits & R_NEWGAME) && (s.w(LIVES) < p.w(LIVES) || m == M_GAMEOVER)) c.run_bits |= R_LIFE_LOST;
+
+        if (play && s.b(QUACK) && !p.b(QUACK)) fire(A_QUACK);
+
+        // Rampage: enemies defeated during one Quack Attack. A defeat: same type as last frame (not $12, which only
+        // stuns again), hit by a killing attack (+$0F = $FF), hit points +$39 down to 0 or below, a new state.
+        int kills = 0;
+        if (play) {
+            auto check = [&](uint32_t a) {
+                const int t = s.w(a);
+                if (!t || t != p.w(a) || t == 0x12) return;
+                const int hp0 = p.b(a + 0x39), hp1 = s.b(a + 0x39);
+                if (s.b(a + 0x0F) == 0xFF && hp1 != hp0 && ((hp0 - hp1) & 0xFF) < 0x10 && (hp1 == 0 || hp1 >= 0x80) &&
+                    s.w(a + 2) != p.w(a + 2))
+                    kills++;
+            };
+            for (uint32_t i = 0; i < 48; i++) check(0xFF9000 + i * 0x40);
+            for (uint32_t i = 0; i < 16; i++) check(0xFF9EC0 + i * 0x40);
+        }
+        if (s.b(QUACK) || p.b(QUACK)) {
+            if (play && kills) {
+                c.scratch[S_QKILLS] += kills;
+                c.progress.push_back({A_RAMPAGE, std::min(c.scratch[S_QKILLS], 5)});
+                if (c.scratch[S_QKILLS] >= 5) fire(A_RAMPAGE);
+            }
+        }
+        if (!s.b(QUACK)) c.scratch[S_QKILLS] = 0;
+
+        if (play && s.w(POPCORN) >= 95 && p.w(POPCORN) < 95) fire(A_POPCORN);
+        if (play && s.w(POPCORN) > p.w(POPCORN)) c.progress.push_back({A_POPCORN, std::min<int>(s.w(POPCORN), 95)});
+        // score (+ the points still counting up) reaches 1,000,000 (stored /10)
+        const uint32_t total = s.l(SCORE) + s.w(PENDING), ptotal = p.l(SCORE) + p.w(PENDING);
+        if (play && total >= 100000 && total > ptotal) fire(A_SCORE);
+        // Frequent Flyer: one count per plane departure from the world map (kept across sessions by the app)
+        if (m == M_MAP && pm == M_MAP && p.w(MAP_STATE) == 1 && s.w(MAP_STATE) == 2) c.counted.push_back(A_FLYER);
+        // Hitching a Ride: carried by a bird on the green plunger (player state $14/$15)
+        if (play && ((s.w(PLAYER + 2) & 0x7FFE) == 0x14) && ((p.w(PLAYER + 2) & 0x7FFE) != 0x14)) fire(A_BIRD);
+
+        // Wall Crawler: two plunger platforms in a row (a red / green plunger shot into a wall), the second higher,
+        // no ground in between
+        if (play) {
+            bool onp = s.b(ON_PLUNGER) != 0;
+            for (uint32_t i = 0; i < 11 && !onp; i++) {
+                const uint32_t a = 0xFF9C00 + i * 0x40;
+                if ((s.w(a) == 0x61 || s.w(a) == 0x62) && (s.b(a + 0x0E) & 0x40)) onp = true;
+            }
+            if (onp && !c.scratch[S_ON_PLUNGER]) {
+                const int y = s.sw(PY);
+                if (c.scratch[S_HAVE_PLUNGER_Y] && y < c.scratch[S_PLUNGER_Y] - 8) fire(A_CLIMBER);
+                c.scratch[S_PLUNGER_Y] = y;
+                c.scratch[S_HAVE_PLUNGER_Y] = 1;
+            } else if (!onp && !(s.b(AIRFLAGS) & 1)) {
+                c.scratch[S_HAVE_PLUNGER_Y] = 0;   // back on the ground
+            }
+            c.scratch[S_ON_PLUNGER] = onp;
+        } else {
+            c.scratch[S_ON_PLUNGER] = c.scratch[S_HAVE_PLUNGER_Y] = 0;
+        }
+
+        // Duck of Steel: one visit (arrival by plane, mode 3) that completes the location's objective for that visit
+        // (its first objective flag 0 -> $FF; the ending on the Island) without losing a heart
+        static const uint32_t kObjectives[10][3] = {
+            {0, 0, 0}, {0xFFEEC0, 0xFFEEE0, 0xFFEEE7}, {0xFFEEC1, 0xFFEEE4, 0}, {0xFFEEF3, 0, 0}, {0xFFEEED, 0, 0},
+            {0xFFEEE1, 0xFFEEF9, 0}, {0xFFEEE2, 0, 0}, {0xFFEEE3, 0, 0}, {0xFFEEF8, 0, 0}, {0, 0, 0}};
+        if (m == M_MAP2LVL && pm != M_MAP2LVL) {
+            const int loc = s.w(LOC);
+            c.scratch[S_STEEL_LOC] = loc >= 1 && loc <= 9 ? loc : 0;
+            c.scratch[S_STEEL_CLEAN] = 1;
+        }
+        if (const int loc = c.scratch[S_STEEL_LOC]) {
+            if (m == M_MAP || m == M_GAMEOVER || m == M_CONTINUE || m == M_NEWGAME || s.w(LOC) != loc) {
+                c.scratch[S_STEEL_LOC] = 0;
+            } else {
+                if (s.w(POWER) < p.w(POWER) || s.w(LIVES) < p.w(LIVES)) c.scratch[S_STEEL_CLEAN] = 0;
+                bool done = false;
+                if (flag_frame)
+                    for (uint32_t a : kObjectives[loc])
+                        if (a && !p.b(a) && s.b(a)) done = true;
+                if (loc == 9 && m == M_ENDING && pm == M_GAME) done = true;
+                if (done) {
+                    if (c.scratch[S_STEEL_CLEAN]) fire(A_STEEL);
+                    c.scratch[S_STEEL_LOC] = 0;
+                }
+            }
+        }
+
+        // Mine Cart Maverick: Egypt room 5 (entered, or reloaded after a death) to its far exit (entry 6), no hit.
+        // S_CART: 0 not riding, 1 riding clean, 2 hit
+        if (s.w(LOC) == 7 && s.w(ROOM) == 5 && m == M_GAME && (c.scratch[S_CART] == 0 || pm == M_LOAD)) c.scratch[S_CART] = 1;
+        if (c.scratch[S_CART]) {
+            if (s.w(LOC) != 7 || m == M_MAP || m == M_GAMEOVER) {
+                c.scratch[S_CART] = 0;
+            } else if (s.w(POWER) < p.w(POWER) || s.w(LIVES) < p.w(LIVES)) {
+                c.scratch[S_CART] = 2;
+            } else if (m == M_LOAD && s.w(ENTRY) == 6) {
+                if (c.scratch[S_CART] == 1) fire(A_MINECART);
+                c.scratch[S_CART] = 0;
+            }
         }
     }
 

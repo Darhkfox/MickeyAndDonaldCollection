@@ -55,7 +55,8 @@ that fits the screen (2:1 on most phones).
 ## Features
 
 **Launcher**
-- One card per game with a live attract-mode preview, plus Options, the Music Player and Credits.
+- One card per game with a live attract-mode preview, plus Options, Achievements, the Music Player and
+  Credits.
 
 **Widescreen**
 - 16:10 (360×224), 16:9 (400×224), 2:1 (448×224) and 21:9 ultrawide (536×224, fills 3440×1440 and
@@ -94,7 +95,21 @@ that fits the screen (2:1 on most phones).
 - QuackShot: 48 areas, with the story items and flags Donald would have at that point.
 - World of Illusion: 38 stages, as Mickey, Donald or 2 players (stages not on that route are greyed out).
 
-**Cheats** (pause menu, applied at once)
+**Achievements**
+- 53 achievements: 17 for Castle of Illusion, 18 for QuackShot, 16 for World of Illusion and 2 for the
+  whole collection (Grand Tour: finish all three games; Completionist: unlock every other one).
+- Story milestones, plus gameplay feats such as bouncing on three enemies in a row without touching the
+  ground, beating a boss without a scratch, a Quack Attack rampage, climbing a wall on your own plungers,
+  or knocking out three enemies with one swish of the cape. Some are hidden until you earn them.
+- Achievements are earned fair and square: while they're on (*Options → Achievements*, on by default),
+  cheats can't be used and fast forward / rewind are disabled. Save states and the level select still
+  work, but the "finish the game from a new game" achievements need a playthrough started with New Game
+  (or *Reset Game*) without using the level select. Switch achievements off to use cheats, fast forward
+  and rewind again.
+- A pop-up announces each one; the launcher and the pause menu list them all, with progress counters for
+  things like the 52 cards of World of Illusion.
+
+**Cheats** (pause menu, applied at once; switch achievements off first)
 - Castle of Illusion: invincibility, infinite power, tries, items and continues, start with full power, and
   the developers' hidden level select on the OPTIONS screen.
 - QuackShot: invincibility, infinite health, lives and ammo, all weapons / plungers, endless or permanent
@@ -107,7 +122,7 @@ that fits the screen (2:1 on most phones).
   for both players, hot-plugging.
 - 5 save-state slots per game (F5 / F9), fast forward (hold Tab or the right trigger, 4×), rewind (hold R
   or the left trigger, up to the last minute of play), screenshots (F12). Fast forward and rewind can each
-  be switched off.
+  be switched off, and are only available while achievements are off.
 - Version 1.0 (shown in the launcher); the Credits page has links to the author.
 
 ## Default controls
@@ -137,7 +152,8 @@ Steam Input can make one controller appear twice; if one pad moves both players,
 
 ## Files
 
-Settings are stored in `settings.ini`, save states in `saves\`, screenshots in `screenshots\`. These live
+Settings are stored in `settings.ini`, earned achievements in `achievements.ini`, save states in `saves\`,
+screenshots in `screenshots\`. These live
 next to the exe (the folder is portable), or in `%LOCALAPPDATA%\Mickey and Donald Collection` if that
 folder isn't writable. Delete `settings.ini` to restore the defaults.
 

@@ -21,6 +21,7 @@
 #include "monitors.h"
 #endif
 #include "rewind.h"
+#include "achievements.h"
 #ifdef __ANDROID__
 #include "touch.h"
 #endif
@@ -109,8 +110,8 @@ private:
     Jukebox jukebox_;
     int  launcher_sel_ = 0;              // 0..kGameCount-1 games, then Options, Music Player, Credits, Quit
     int  launcher_last_card_ = 0;
-    float launcher_anim_[kGameCount + 4] = {};
-    Rect launcher_hit_[kGameCount + 4] = {};   // cards then buttons, where the last draw put them (taps)
+    float launcher_anim_[kGameCount + 5] = {};
+    Rect launcher_hit_[kGameCount + 5] = {};   // cards then buttons, where the last draw put them (taps)
 #ifdef __ANDROID__
     TouchControls touch_;
     bool touch_active_ = true;           // the last input came from the touch screen (else a controller / keys)
@@ -135,6 +136,24 @@ private:
     double rewind_acc_ = 0;             // rewind steps due (real-time pacing)
     unsigned ff_audio_tick_ = 0;        // fast forward keeps every 4th game frame's audio
 
+    // achievements (app_achievements.cpp)
+    AchievementStore ach_;
+    AchievementCtx ach_ctx_;             // the session's run: scratch and run facts for the module's checks
+    struct AchBanner { std::string name; float t = 0; };
+    std::vector<AchBanner> ach_banners_; // "achievement unlocked" pop-ups, shown one after another
+    float ach_locked_note_ = 0;          // cooldown of the "off while achievements are on" message
+    void ach_startup();                  // loads achievements.ini; the one-time explanation
+    void ach_new_run(bool counts);       // power-on (counts: a New Game run) / level select (doesn't)
+    void ach_frame();                    // after every emulated frame of the game being played
+    void ach_award(const std::string& id, const std::string& name);
+    void ach_check_collection();
+    void draw_ach_banners(float dt);
+    std::string ach_state_tag() const;   // the run, stored with save states
+    void ach_load_tag(const std::string& tag);
+    void set_achievements(bool on);
+    MenuPage achievements_page(int game);   // a game's list (index into games_) and the collection's; -1 = all
+    MenuPage cheats_locked_page();
+
     // timing
     double time_ = 0;
     double frame_acc_ = 0;
@@ -150,7 +169,7 @@ private:
 
     // --autotest <dir> <script>: hidden window, scripted key presses, screenshots of the output.
     // action: 0 up, 1 down, 2 shot, 3 quit, 4 realtime, 5 mark, 6 record, 7 stop recording, 8 load state,
-    // 9 replay pad input (trailer gameplay found by tools/trailer/bot.py), 10 set a video setting
+    // 9 replay pad input (trailer gameplay found by tools/trailer/bot.py), 10 set a video setting, 11 award an achievement
     struct ScriptStep { int frame; int vk; int action; std::string arg; };
     bool autotest_ = false;
     bool autotest_realtime_ = false;            // script "realtime 1": real elapsed time instead of 1/60 s per loop

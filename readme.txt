@@ -14,8 +14,8 @@
   sound) is reproduced in native code, so the games run directly on Windows
   -- no separate emulator needed -- with a set of modern extras: true
   widescreen up to 21:9 ultrawide, fullscreen, filters and colour profiles,
-  save states, fast forward and rewind, and an in-game menu (cheats, level
-  select, music player and sound test).
+  save states, fast forward and rewind, 53 achievements, and an in-game
+  menu (cheats, level select, music player and sound test).
 
   This is a personal, non-commercial project. It does NOT include the games
   themselves -- you must supply your own ROMs of cartridges you own.
@@ -136,6 +136,8 @@
      Tab ............ Fast forward, 4x   (hold) -- can be switched off
      R .............. Rewind             (hold) -- up to the last minute of
                                          play; can be switched off
+                     (fast forward and rewind only work while achievements
+                     are switched off)
      F11 ............ Fullscreen / window (Alt+Enter works too)
      F12 ............ Screenshot         (saved in a "screenshots" folder)
 
@@ -151,6 +153,8 @@
   a game, Enter (or A on a pad) starts it. Below the cards:
 
      Options ........ The same settings as in the game (see OPTIONS below).
+     Achievements ... Every achievement of the three games and what
+                      you've earned. See ACHIEVEMENTS below.
      Music Player ... The soundtracks of all three games (Left / Right
                       switches game).
      Credits ........ Where to find me: YouTube, Reddit and GitHub.
@@ -196,7 +200,9 @@
   CHEATS
      Switch each cheat on or off; they work straight away and stay on until
      you turn them off (even after you quit). "Disable All" turns them all
-     off.
+     off. Cheats can only be used while achievements are switched off
+     (Options > Achievements); with achievements on, this item explains
+     that and offers to switch them off for you.
        Castle of Illusion ... Invincibility, Infinite Power, Infinite Tries,
                               Infinite Items, Infinite Continues, Start With
                               Full Power, and the developers' hidden level
@@ -210,6 +216,10 @@
                               Maximum Hearts (both players).
      Pits and scripted deaths still cost a life with invincibility on --
      turn on infinite lives / tries as well if you want to be safe.
+
+  ACHIEVEMENTS
+     The achievements of the game you're playing: what you've earned (and
+     when), and progress towards the ones that count something.
 
   SOUND TEST / MUSIC PLAYER
      Every music track, sound effect and voice of the game, played by the
@@ -284,11 +294,100 @@
      swaps; Esc cancels). Also: Device (which pad), Left Stick Moves
      (default ON) and Reset to Defaults.
 
+  ACHIEVEMENTS
+     Achievements ...... Earn achievements as you play. While this is on,
+                         cheats, fast forward and rewind can't be used.
+                                                         (default: ON)
+
   SPEED
      Fast Forward ...... Hold Tab or the right trigger for 4x speed.
-                                                         (default: ON)
+                         Only while achievements are off. (default: ON)
      Rewind ............ Hold R or the left trigger to step back through the
-                         last minute of play.            (default: ON)
+                         last minute of play. Only while achievements are
+                         off.                            (default: ON)
+
+
+--------------------------------------------------------------------------------
+  ACHIEVEMENTS
+--------------------------------------------------------------------------------
+
+  53 achievements to earn across the collection. A pop-up announces each
+  one as it happens; the launcher's Achievements page and the pause menu
+  list them all. Hidden ones show as "???" until you earn them.
+
+  They're earned fair and square: while achievements are on (Options >
+  Achievements, on by default), cheats can't be switched on and fast forward
+  and rewind are disabled. Switch achievements off to use those again --
+  anything you've already earned stays earned.
+
+  Save states and the level select still work with achievements on. The
+  "finish the game from a new game" achievements (Hard-Boiled Mouse, Iron
+  Mouse, Untouchable Duck, Mickey's Magic, Donald's Magic, Better Together)
+  need one playthrough started with New Game (or Reset Game) without the
+  level select; save states made during that playthrough keep it going.
+
+  CASTLE OF ILLUSION  (17)
+     Timber! ............... Defeat the Evil Tree.
+     Toy Box Champion ...... Clear Toyland.
+     Calm After the Storm .. Clear the Storm.
+     Just Desserts ......... Clear the Library and Dessert Land.
+     Time's Up, Jester ..... Clear the Clock Tower.
+     Minnie Rescued ........ Defeat Mizrabel and rescue Minnie.
+     Hard-Boiled Mouse ..... Finish the game on Hard, from a new game.
+     Not a Scratch ......... Clear any act without losing a power star.
+     Flawless Showdown ..... Beat any boss without losing a power star.
+     Iron Mouse ............ Finish the game from a new game without losing
+                             a try.
+     Tea Party ............. Visit both tea cups in the Library.
+     Apple of My Eye ....... Defeat an enemy with a thrown apple or marble.
+     Juggler ............... Carry 30 items at once.
+     Six Figures ........... Score 100,000 points.
+     ...and 3 hidden ones.
+
+  QUACKSHOT  (18)
+     Key to Adventure ...... Get the Hero Key.
+     Gyro's Gift ........... Get Gyro's bubble gum.
+     Stake Out ............. Defeat Dracula Duck.
+     Tiger Tamer ........... Beat the Maharajah's tiger.
+     Ghost Ship Gone ....... Beat the Viking ghosts.
+     Pete's Comeuppance .... Beat Pete.
+     The Great Duck
+       Treasure ............ Finish the game.
+     Duck of Steel ......... Clear a whole location without losing a heart.
+     Untouchable Duck ...... Finish the game from a new game without losing
+                             a life.
+     Mine Cart Maverick .... Ride Egypt's mine cart without a hit.
+     Hot Under the Collar .. Eat 5 chilli peppers and go into Quack Attack.
+     Wall Crawler .......... Climb a wall using your plungers as steps.
+     Gum Shoe .............. Blow up Transylvania's wall with bubble gum.
+     Popcorn Hoarder ....... Fill your popcorn to the maximum.
+     Frequent Flyer ........ Take 15 plane trips.
+     Seven-Figure Duck ..... Score 1,000,000 points.
+     ...and 2 hidden ones.
+
+  WORLD OF ILLUSION  (16)
+     Out of the Box ........ Clear the Enchanted Forest.
+     Mountain Mover ........ Clear the Rocky Mountains.
+     Sea Legs .............. Clear Under the Sea.
+     Giant Steps ........... Clear the Giant House.
+     Curtain Call .......... Defeat the Magician.
+     Mickey's Magic ........ Finish the game as Mickey, from a new game.
+     Donald's Magic ........ Finish the game as Donald, from a new game.
+     Better Together ....... Finish the game in two-player mode, from a new
+                             game.
+     Spotless Spell ........ Beat any boss without losing a heart.
+     Magic Carpet Ace ...... Clear the magic carpet ride without a hit.
+     Full Deck ............. Collect all 52 playing cards.
+     Heart of Gold ......... Fill all 8 hearts.
+     Hocus Pocus ........... Cast a spell at a magic spot.
+     ...and 3 hidden ones.
+
+  THE COLLECTION  (2)
+     Grand Tour ............ Finish all three games.
+     Completionist ......... Unlock every other achievement.
+
+  Earned achievements are kept in "achievements.ini" next to
+  DisneyClassics.exe (see below). Delete it to start again.
 
 
 --------------------------------------------------------------------------------
@@ -299,9 +398,10 @@
   per game: pick one under Slot in the pause menu, then save with F5 and
   load with F9.
 
-  Settings are kept in "settings.ini", save states in a "saves" folder and
-  screenshots in a "screenshots" folder, all next to DisneyClassics.exe, so
-  the whole folder is portable. If that folder can't be written to (for
+  Settings are kept in "settings.ini", earned achievements in
+  "achievements.ini", save states in a "saves" folder and screenshots in a
+  "screenshots" folder, all next to DisneyClassics.exe, so the whole folder
+  is portable. If that folder can't be written to (for
   example under Program Files) they go to
   %LOCALAPPDATA%\Mickey and Donald Collection instead. Delete settings.ini
   to go back to the defaults.

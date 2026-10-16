@@ -374,3 +374,65 @@ API void mdt_module_jukebox_boot(void* h) { Tool* t = (Tool*)h; if (t->module) t
 API void mdt_module_jukebox_frame(void* h) { Tool* t = (Tool*)h; if (t->module) t->module->jukebox_frame(t->md); }
 API void mdt_module_play(void* h, int id) { Tool* t = (Tool*)h; if (t->module) t->module->play_sound(t->md, id); }
 API void mdt_module_stop(void* h) { Tool* t = (Tool*)h; if (t->module) t->module->stop_sound(t->md); }
+
+// ---- Achievement detectors on RAM images (headless checks of GameModule::achievement_frame) ----
+namespace {
+struct AchTool {
+    std::unique_ptr<GameModule> module;
+    std::unique_ptr<MegaDrive> md;   // only its RAM is used
+    AchievementCtx ctx;
+};
+}
+API void* mdt_ach_create(const char* game_id) {
+    auto* a = new AchTool;
+    std::string s = game_id ? game_id : "";
+    if (s == "coi") a->module.reset(create_coi_module());
+    else if (s == "qs") a->module.reset(create_qs_module());
+    else if (s == "woi") a->module.reset(create_woi_module());
+    if (!a->module) { delete a; return nullptr; }
+    a->md.reset(new MegaDrive);
+    return a;
+}
+API void mdt_ach_destroy(void* h) { delete (AchTool*)h; }
+// A new run: what the app knows (New Game run or not, the run bits a save state carried) and, optionally, the RAM
+// the next step is compared with.
+API void mdt_ach_reset(void* h, int run_counts, uint32_t run_bits, const uint8_t* ram) {
+    AchTool* a = (AchTool*)h;
+    a->ctx = AchievementCtx();
+    a->ctx.run_counts = run_counts != 0;
+    a->ctx.run_bits = run_bits;
+    if (ram) a->ctx.prev.assign(ram, ram + 0x10000);
+}
+// One frame: `ram` = the 64 KB after it. Events go to out[] as kind << 16 | value << 8 | index
+// (kind 0 unlocked, 1 counted, 2 marked with value = bit, 3 progress with value = count & 0xFF); returns how many.
+API int mdt_ach_step(void* h, const uint8_t* ram, int* out, int max) {
+    AchTool* a = (AchTool*)h;
+    memcpy(a->md->ram, ram, 0x10000);
+    a->module->achievement_frame(*a->md, a->ctx);
+    a->ctx.prev.assign(ram, ram + 0x10000);
+    int n = 0;
+    auto put = [&](int kind, int value, int index) { if (n < max) out[n++] = (kind << 16) | ((value & 0xFF) << 8) | (index & 0xFF); };
+    for (int i : a->ctx.unlocked) put(0, 0, i);
+    for (int i : a->ctx.counted) put(1, 0, i);
+    for (auto& m : a->ctx.marked) put(2, m.second, m.first);
+    for (auto& pr : a->ctx.progress) put(3, pr.second, pr.first);
+    a->ctx.unlocked.clear();
+    a->ctx.counted.clear();
+    a->ctx.marked.clear();
+    a->ctx.progress.clear();
+    return n;
+}
+API uint32_t mdt_ach_run_bits(void* h) { return ((AchTool*)h)->ctx.run_bits; }
+API int mdt_ach_list(void* h, char* out, int max) {   // "id|name\n" lines in index order
+    AchTool* a = (AchTool*)h;
+    std::string s;
+    for (const AchievementDef& d : a->module->achievements()) s += std::string(d.id) + "|" + d.name + "\n";
+    if (out && max > 0) { strncpy(out, s.c_str(), max - 1); out[max - 1] = 0; }
+    return (int)a->module->achievements().size();
+}
+API void mdt_ach_set_run(void* h, int run_counts, uint32_t run_bits) {   // without restarting the frame checks
+    AchTool* a = (AchTool*)h;
+    a->ctx.run_counts = run_counts != 0;
+    a->ctx.run_bits = run_bits;
+}
+API void mdt_ach_level_select(void* h) { ((AchTool*)h)->ctx.level_select = true; }   // a level select start just ran
