@@ -85,10 +85,6 @@ void App::open_options_menu(bool from_launcher) {
         p.items.push_back(MenuItem::action(from_launcher ? "Controls - Player 2 (World of Illusion)" : "Controls - Player 2",
                                            [this]() { menu_.push(controls_page(1)); },
                                            "Second player's keys and gamepad (World of Illusion is the only 2-player game)."));
-    p.items.push_back(MenuItem::header("Achievements"));
-    p.items.push_back(MenuItem::toggle("Achievements", [this]() { return settings_.achievements; },
-                                       [this](bool v) { set_achievements(v); },
-                                       "On: earn achievements; cheats, level select, fast forward and rewind are off. Count from the next game start."));
     p.items.push_back(MenuItem::header("Speed"));
     MenuItem ff = MenuItem::toggle("Fast Forward", [this]() { return settings_.fast_forward && !settings_.achievements; },
                                    [this](bool v) { settings_.fast_forward = v; },
@@ -100,6 +96,11 @@ void App::open_options_menu(bool from_launcher) {
                                    "Hold R or the left trigger to step back through the last minute of play.");
     rw.enabled = [this]() { return !settings_.achievements; };
     p.items.push_back(rw);
+    // (right under what it switches off)
+    p.items.push_back(MenuItem::header("Achievements"));
+    p.items.push_back(MenuItem::toggle("Achievements", [this]() { return settings_.achievements; },
+                                       [this](bool v) { set_achievements(v); },
+                                       "On: earn achievements; cheats, level select, fast forward and rewind are off. Count from the next game start."));
 #ifdef __ANDROID__
     p.items.push_back(MenuItem::header("Touch screen"));
     p.items.push_back(MenuItem::choice("On-screen Controls", {"When touched", "Always", "Off"}, [this]() { return settings_.touch_mode; },

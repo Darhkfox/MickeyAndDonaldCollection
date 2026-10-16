@@ -228,9 +228,9 @@ void Menu::draw(Video& v, float time) {
         if (p.sel > target + visible - 2) target = (float)(p.sel - visible + 2);
         // On the last selectable row, also bring the read-only rows after it (e.g. Options' Hotkeys list) into
         // view, as far as the selection stays on screen.
-        int last = -1;
+        int last = -1;   // (greyed-out rows can't be selected, so they don't count)
         for (int i = (int)p.items.size() - 1; i >= 0 && last < 0; i--)
-            if (p.items[i].selectable()) last = i;
+            if (p.items[i].selectable() && (!p.items[i].enabled || p.items[i].enabled())) last = i;
         if (p.sel == last) target = std::max(target, std::min((float)p.sel, (float)((int)p.items.size() - visible)));
     }
     target = std::clamp(target, 0.0f, (float)std::max(0, (int)p.items.size() - visible));
