@@ -26,12 +26,20 @@ void App::open_pause_menu() {
         menu_.close();
     }));
     p.items.push_back(MenuItem::header("Game"));
-    if (!m->levels().empty())
-        p.items.push_back(MenuItem::action("Level Select", [this]() { menu_.push(level_page()); }, "Jump straight to any level."));
-    if (!m->cheats().empty())
-        p.items.push_back(MenuItem::action("Cheats", [this]() { menu_.push(settings_.achievements ? cheats_locked_page() : cheats_page()); },
-                                           settings_.achievements ? "Off while achievements are on (Options)."
-                                                                  : "Toggle cheats. They apply immediately."));
+    // with achievements on, the level select and cheats are greyed out (Options -> Achievements switches them back)
+    auto locked = [this]() { return std::string(settings_.achievements ? "Off (achievements on)" : ""); };
+    if (!m->levels().empty()) {
+        MenuItem it = MenuItem::action("Level Select", [this]() { menu_.push(level_page()); }, "Jump straight to any level.");
+        it.enabled = [this]() { return !settings_.achievements; };
+        it.value_text = locked;
+        p.items.push_back(it);
+    }
+    if (!m->cheats().empty()) {
+        MenuItem it = MenuItem::action("Cheats", [this]() { menu_.push(cheats_page()); }, "Toggle cheats. They apply immediately.");
+        it.enabled = [this]() { return !settings_.achievements; };
+        it.value_text = locked;
+        p.items.push_back(it);
+    }
     p.items.push_back(MenuItem::action("Achievements", [this]() { menu_.push(achievements_page(current_)); },
                                        "This game's achievements and the collection's."));
     if (!m->sounds().empty()) {
@@ -80,7 +88,7 @@ void App::open_options_menu(bool from_launcher) {
     p.items.push_back(MenuItem::header("Achievements"));
     p.items.push_back(MenuItem::toggle("Achievements", [this]() { return settings_.achievements; },
                                        [this](bool v) { set_achievements(v); },
-                                       "On: achievements can be earned, and cheats, rewind and fast forward are off. Off: the reverse."));
+                                       "On: earn achievements; cheats, level select, fast forward and rewind are off. Count from the next game start."));
     p.items.push_back(MenuItem::header("Speed"));
     MenuItem ff = MenuItem::toggle("Fast Forward", [this]() { return settings_.fast_forward && !settings_.achievements; },
                                    [this](bool v) { settings_.fast_forward = v; },

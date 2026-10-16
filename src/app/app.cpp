@@ -338,6 +338,7 @@ bool App::load_script(const std::wstring& path) {
         else if (c == "pads") script_.push_back({fr, 0, 9, a});       // <dir>\<a>.pads: uint16 p1, p2 per frame
         else if (c == "set") script_.push_back({fr, 0, 10, a});       // key=value: widescreen, color, filter, hud_anchor
         else if (c == "award") script_.push_back({fr, 0, 11, a});     // an achievement id (tests of the pop-up / pages)
+        else if (c == "welcome") script_.push_back({fr, 0, 12, ""});  // the first start's achievements page
     }
     std::stable_sort(script_.begin(), script_.end(), [](const ScriptStep& x, const ScriptStep& y) { return x.frame < y.frame; });
     return true;
@@ -369,17 +370,20 @@ void App::run_script() {
         case 8: {
             std::vector<uint8_t> d;
             read_file(path_join(autotest_dir_, from_utf8(s.arg) + L".state"), d);
-            if (session_ && !d.empty() && session_->load_state(d)) { rewind_.clear(); frame_acc_ = 0; }
+            std::string extra;
+            if (session_ && !d.empty() && session_->load_state(d, &extra)) { ach_load_tag(extra); rewind_.clear(); frame_acc_ = 0; }
             break;
         }
         case 11: {
-            std::string name = s.arg;
+            std::string name = s.arg, desc;
+            auto find = [&](const AchievementDef& d) { if (s.arg == d.id) { name = d.name; desc = d.desc; } };
             for (auto& g : games_)
-                for (const AchievementDef& d : g.module->achievements()) if (s.arg == d.id) name = d.name;
-            for (const AchievementDef& d : collection_achievements()) if (s.arg == d.id) name = d.name;
-            ach_award(s.arg, name);
+                for (const AchievementDef& d : g.module->achievements()) find(d);
+            for (const AchievementDef& d : collection_achievements()) find(d);
+            ach_award(s.arg, name, desc);
             break;
         }
+        case 12: ach_welcome(); break;
         case 10: {
             // live video setting changes, as the Options menu makes them (trailer before/after shots)
             size_t eq = s.arg.find('=');

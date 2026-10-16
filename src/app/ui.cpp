@@ -238,6 +238,11 @@ void Menu::draw(Video& v, float time) {
     if (std::fabs(target - p.scroll) < 0.01f || p.free_scroll) p.scroll = target;
 
     const float tx = panel.x + pad, vx = panel.x + panel.w - pad;
+    // lines of text on their own (Info rows without a value) shrink to fit the panel, all by the same amount
+    float text_fit = 1.0f;
+    for (const MenuItem& it : p.items)
+        if (it.kind == MenuItem::Info && !it.value_text)
+            text_fit = std::min(text_fit, (vx - tx) / std::max(1.0f, v.measure_text(FontId::Body, it.label)));
     int first = (int)std::floor(p.scroll);
     for (int i = first; i < (int)p.items.size() && i < first + visible + 1; i++) {
         float ry = list_top + (i - p.scroll) * row;
@@ -259,9 +264,7 @@ void Menu::draw(Video& v, float time) {
             v.fill_round_rect({hr.x, hr.y + hr.h * 0.18f, std::max(3.0f, H / 300.0f), hr.h * 0.64f}, 2.0f, accent);
         }
         uint32_t col = !en ? 0xFF5A6070 : sel ? 0xFFFFFFFF : 0xFFD4DAE6;
-        // a line of text on its own (an Info row without a value) shrinks to fit the panel
-        const float label_fit = it.kind == MenuItem::Info && !it.value_text
-                                    ? std::min(1.0f, (vx - tx) / std::max(1.0f, v.measure_text(FontId::Body, it.label))) : 1.0f;
+        const float label_fit = it.kind == MenuItem::Info && !it.value_text ? text_fit : 1.0f;
         v.draw_text(FontId::Body, tx + (sel ? pad * 0.35f : 0), ty, it.label, col, Align::Left, label_fit);
         std::string val;
         uint32_t vcol = !en ? 0xFF5A6070 : sel ? 0xFFFFFFFF : 0xFFA9B3C6;

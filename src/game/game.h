@@ -56,7 +56,8 @@ struct AchievementDef {
 // run is interrupted (level select, a loaded save state); `run_bits` belong to the playthrough and travel with
 // its save states.
 struct AchievementCtx {
-    bool run_counts = false;     // a playthrough started with New Game, with no level select since
+    bool run_counts = false;     // this game started (power-on) with achievements on and they stayed on: no cheats,
+                                 // level select or rewind since (the app only runs the checks then)
     bool level_select = false;   // in: a level was just started with the port's level select. Its set-up ran inside
                                  // GameModule::start_level, so the first frame seen is already gameplay (the module
                                  // clears it once used)

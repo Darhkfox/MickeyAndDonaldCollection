@@ -139,20 +139,20 @@ private:
     // achievements (app_achievements.cpp)
     AchievementStore ach_;
     AchievementCtx ach_ctx_;             // the session's run: scratch and run facts for the module's checks
-    struct AchBanner { std::string name; float t = 0; };
+    struct AchBanner { std::string name, desc; float t = 0; };
     std::vector<AchBanner> ach_banners_; // "achievement unlocked" pop-ups, shown one after another
     float ach_locked_note_ = 0;          // cooldown of the "off while achievements are on" message
     void ach_startup();                  // loads achievements.ini; the one-time explanation
-    void ach_new_run(bool counts);       // power-on (counts: a New Game run) / level select (doesn't)
+    void ach_welcome();                  // (that explanation)
+    void ach_new_run(bool counts);       // power-on (counts: achievements are on) / level select (doesn't)
     void ach_frame();                    // after every emulated frame of the game being played
-    void ach_award(const std::string& id, const std::string& name);
+    void ach_award(const std::string& id, const std::string& name, const std::string& desc);
     void ach_check_collection();
     void draw_ach_banners(float dt);
     std::string ach_state_tag() const;   // the run, stored with save states
     void ach_load_tag(const std::string& tag);
     void set_achievements(bool on);
     MenuPage achievements_page(int game);   // a game's list (index into games_) and the collection's; -1 = all
-    MenuPage cheats_locked_page();
 
     // timing
     double time_ = 0;

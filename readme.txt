@@ -183,7 +183,8 @@
 
   LEVEL SELECT
      Start any level. Your current game is not kept, so make a save state
-     first if you want to come back to it.
+     first if you want to come back to it. Only while achievements are off
+     (Options > Achievements): with them on it's greyed out.
        Castle of Illusion ... 28 entries: every act of the Enchanted Forest,
                               Toyland, the Storm, the Library (including the
                               tea cups) and the Clock Tower, each boss, and
@@ -200,9 +201,8 @@
   CHEATS
      Switch each cheat on or off; they work straight away and stay on until
      you turn them off (even after you quit). "Disable All" turns them all
-     off. Cheats can only be used while achievements are switched off
-     (Options > Achievements); with achievements on, this item explains
-     that and offers to switch them off for you.
+     off. Only while achievements are off (Options > Achievements): with
+     them on it's greyed out.
        Castle of Illusion ... Invincibility, Infinite Power, Infinite Tries,
                               Infinite Items, Infinite Continues, Start With
                               Full Power, and the developers' hidden level
@@ -296,8 +296,9 @@
 
   ACHIEVEMENTS
      Achievements ...... Earn achievements as you play. While this is on,
-                         cheats, fast forward and rewind can't be used.
-                                                         (default: ON)
+                         cheats, the level select, fast forward and rewind
+                         are switched off. Switched on during a game, they
+                         count from the next Reset Game.  (default: ON)
 
   SPEED
      Fast Forward ...... Hold Tab or the right trigger for 4x speed.
@@ -312,19 +313,22 @@
 --------------------------------------------------------------------------------
 
   53 achievements to earn across the collection. A pop-up announces each
-  one as it happens; the launcher's Achievements page and the pause menu
-  list them all. Hidden ones show as "???" until you earn them.
+  one as it happens, with what it was for; the launcher's Achievements
+  page and the pause menu list them all. Hidden ones show as "???" until
+  you earn them.
 
   They're earned fair and square: while achievements are on (Options >
-  Achievements, on by default), cheats can't be switched on and fast forward
-  and rewind are disabled. Switch achievements off to use those again --
-  anything you've already earned stays earned.
+  Achievements, on by default), cheats, the level select, fast forward and
+  rewind are switched off. Save states still work. Switch achievements off
+  to use those again -- anything you've already earned stays earned.
 
-  Save states and the level select still work with achievements on. The
-  "finish the game from a new game" achievements (Hard-Boiled Mouse, Iron
-  Mouse, Untouchable Duck, Mickey's Magic, Donald's Magic, Better Together)
-  need one playthrough started with New Game (or Reset Game) without the
-  level select; save states made during that playthrough keep it going.
+  Achievements count in a game that was started with them on (from the
+  launcher, or with Reset Game). If you switch them on during a game, they
+  count from your next Reset Game; a save state made while they were off
+  (or with version 1.0) doesn't count either. The "finish the game from a
+  new game" ones (Hard-Boiled Mouse, Iron Mouse, Untouchable Duck, Mickey's
+  Magic, Donald's Magic, Better Together) need the whole playthrough from
+  New Game; save states made along the way keep it going.
 
   CASTLE OF ILLUSION  (17)
      Timber! ............... Defeat the Evil Tree.

@@ -90,7 +90,7 @@ that fits the screen (2:1 on most phones).
 - Every music track, sound effect and voice of each game, played by the game's own sound driver, with
   channel meters.
 
-**Level select**
+**Level select** (pause menu, while achievements are off)
 - Castle of Illusion: 28 entries (every act, the Library's tea cups, each boss and the final battle).
 - QuackShot: 48 areas, with the story items and flags Donald would have at that point.
 - World of Illusion: 38 stages, as Mickey, Donald or 2 players (stages not on that route are greyed out).
@@ -102,11 +102,12 @@ that fits the screen (2:1 on most phones).
   ground, beating a boss without a scratch, a Quack Attack rampage, climbing a wall on your own plungers,
   or knocking out three enemies with one swish of the cape. Some are hidden until you earn them.
 - Achievements are earned fair and square: while they're on (*Options → Achievements*, on by default),
-  cheats can't be used and fast forward / rewind are disabled. Save states and the level select still
-  work, but the "finish the game from a new game" achievements need a playthrough started with New Game
-  (or *Reset Game*) without using the level select. Switch achievements off to use cheats, fast forward
-  and rewind again.
-- A pop-up announces each one; the launcher and the pause menu list them all, with progress counters for
+  cheats, the level select, fast forward and rewind are switched off; save states still work. They count
+  in a game started with achievements on: switched on mid-game they count from the next *Reset Game*, and
+  a save state made without them doesn't count either. The "finish the game from a new game" ones need
+  the whole playthrough from New Game. Switch achievements off to use cheats, the level select, fast
+  forward and rewind again.
+- A pop-up announces each one and what it was for; the launcher and the pause menu list them all, with progress counters for
   things like the 52 cards of World of Illusion.
 
 **Cheats** (pause menu, applied at once; switch achievements off first)
