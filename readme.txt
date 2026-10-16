@@ -1,5 +1,5 @@
 ================================================================================
-  MICKEY & DONALD COLLECTION  --  PC Edition V1.0 - 15th Oct 26
+  MICKEY & DONALD COLLECTION  --  PC Edition V1.1 - 16th Oct 26
 ================================================================================
 
   A custom PC port of three Sega Mega Drive / Genesis classics, with a

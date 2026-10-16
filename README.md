@@ -123,7 +123,7 @@ that fits the screen (2:1 on most phones).
 - 5 save-state slots per game (F5 / F9), fast forward (hold Tab or the right trigger, 4×), rewind (hold R
   or the left trigger, up to the last minute of play), screenshots (F12). Fast forward and rewind can each
   be switched off, and are only available while achievements are off.
-- Version 1.0 (shown in the launcher); the Credits page has links to the author.
+- Version 1.1 (shown in the launcher); the Credits page has links to the author.
 
 ## Default controls
 

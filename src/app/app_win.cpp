@@ -15,7 +15,7 @@
 namespace {
 App* g_app = nullptr;
 const wchar_t* kWindowClass = L"MickeyDonaldPortWindow";
-const wchar_t* kWindowTitle = L"Mickey & Donald Collection v1.0";   // keep in step with kAppVersion
+const wchar_t* kWindowTitle = L"Mickey & Donald Collection v1.1";   // keep in step with kAppVersion
 
 LRESULT CALLBACK wnd_thunk(HWND h, UINT m, WPARAM w, LPARAM l) {
     if (g_app) return g_app->wndproc(h, m, w, l);

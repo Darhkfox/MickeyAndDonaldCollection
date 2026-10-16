@@ -26,7 +26,7 @@
 #include "touch.h"
 #endif
 
-constexpr const char* kAppVersion = "1.0";   // shown in the launcher, the window title and Credits
+constexpr const char* kAppVersion = "1.1";   // shown in the launcher, the window title and Credits
 constexpr double kEmuFps = 53693175.0 / (3420.0 * 262.0);   // 59.9227 Hz
 
 struct GameSlot {
