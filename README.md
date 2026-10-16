@@ -77,6 +77,9 @@ that fits the screen (2:1 on most phones).
   selects it), window size 1×–6×, integer scaling, square / CRT (4:3) pixels or stretch.
 - Filters: nearest, sharp bilinear, bilinear, scanlines, CRT. Direct3D 11.
 - Sprite flicker removal (no sprites-per-line limit), V-Sync, FPS counter.
+- Black frame insertion for sharper motion, like a CRT: on a 120, 180 or 240 Hz display each game frame is
+  followed by black refreshes (the picture gets darker; 144 / 165 Hz can't line up with 60 fps, so set
+  the display to 120 Hz). On phones it asks for 120 Hz.
 
 **Colours**
 - Profiles: Accurate (measured Mega Drive output levels), Linear, Vivid, Warm CRT, Cool, Grayscale, Sepia,

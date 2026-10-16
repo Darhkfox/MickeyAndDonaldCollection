@@ -224,14 +224,16 @@ double App::refresh_rate() {
 }
 
 // Tells Android the game runs at 60 fps (ANativeWindow_setFrameRate, Android 11+), so a phone with an adaptive
-// display can run it at 60 Hz, or at a multiple of it, instead of whatever rate it would pick.
+// display can run it at 60 Hz, or at a multiple of it, instead of whatever rate it would pick. With black frame
+// insertion it asks for 120 (a picture, then a black frame).
 void App::set_frame_rate() {
     typedef int32_t (*SetFrameRate)(ANativeWindow*, float, int8_t);
     static SetFrameRate fn = (SetFrameRate)dlsym(RTLD_DEFAULT, "ANativeWindow_setFrameRate");
     SDL_SysWMinfo info;
     SDL_VERSION(&info.version);
     if (fn && window_ && SDL_GetWindowWMInfo(window_, &info) && info.subsystem == SDL_SYSWM_ANDROID && info.info.android.window)
-        fn(info.info.android.window, (float)kEmuFps, 1 /* ANATIVEWINDOW_FRAME_RATE_COMPATIBILITY_FIXED_SOURCE */);
+        fn(info.info.android.window, (float)(settings_.black_frames ? 2 * kEmuFps : kEmuFps),   // (black frames: 120 Hz)
+           1 /* ANATIVEWINDOW_FRAME_RATE_COMPATIBILITY_FIXED_SOURCE */);
 }
 
 // Trailer recording is a Windows test feature.

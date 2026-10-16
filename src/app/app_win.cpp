@@ -387,5 +387,5 @@ void App::start_recording(const std::string& name) {
     rec_frames_ = 0; rec_samples_ = 0;
 }
 
-double App::refresh_rate() { return display_refresh(hwnd_); }
+double App::refresh_rate() { return test_refresh_ > 0 ? test_refresh_ : display_refresh(hwnd_); }
 

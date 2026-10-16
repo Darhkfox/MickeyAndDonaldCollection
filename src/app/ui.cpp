@@ -277,6 +277,15 @@ void Menu::draw(Video& v, float time) {
             v.fill_round_rect(sr, sh * 0.5f, on ? with_alpha(accent, en ? 1.0f : 0.4f) : 0xFF3A404E);
             float kx = on ? sr.x + sw - sh : sr.x;
             v.fill_round_rect({kx + sh * 0.12f, sr.y + sh * 0.12f, sh * 0.76f, sh * 0.76f}, sh * 0.38f, 0xFFF4F6FA);
+            // a note next to the switch (e.g. what a setting needs to work), shrunk to fit beside the label
+            const std::string note = it.value_text ? it.value_text() : "";
+            if (!note.empty()) {
+                const float right = sr.x - sh * 0.7f;
+                const float left = tx + (sel ? pad * 0.35f : 0) + v.measure_text(FontId::Body, it.label) + sh;
+                const float s = std::min(1.0f, std::max(0.0f, right - left) / std::max(1.0f, v.measure_text(FontId::Body, note)));
+                const float lh = v.line_height(FontId::Body);
+                if (s > 0.35f) v.draw_text(FontId::Body, right, ty + lh * (1.0f - s) * 0.5f, note, vcol, Align::Right, s);
+            }
             break;
         }
         case MenuItem::Choice: {

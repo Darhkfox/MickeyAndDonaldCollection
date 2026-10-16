@@ -195,6 +195,14 @@ MenuPage App::video_page() {
 #ifdef _WIN32
     p.items.push_back(MenuItem::toggle("VSync", [this]() { return settings_.vsync; }, [this, changed](bool v) { settings_.vsync = v; changed(); }));
 #endif
+    MenuItem bfi = MenuItem::toggle("Black Frame Insertion", [this]() { return settings_.black_frames; }, [this](bool v) {
+        settings_.black_frames = v;
+#ifdef __ANDROID__
+        set_frame_rate();   // (asks for 120 Hz)
+#endif
+    }, "Sharper motion: a black frame between the game's frames, like a CRT. Needs a 120 Hz screen; the picture gets darker.");
+    bfi.value_text = [this]() { return black_frames_note(); };
+    p.items.push_back(bfi);
     p.items.push_back(MenuItem::toggle("Remove Sprite Flicker", [this]() { return settings_.no_sprite_limit; },
                                        [this, changed](bool v) { settings_.no_sprite_limit = v; changed(); },
                                        "Lifts the hardware limit on sprites per line."));

@@ -33,6 +33,18 @@ void App::apply_settings() {
 
 void App::save_settings() { if (!autotest_) settings_.save(settings_path_); }
 
+// Black frame insertion needs the display at 2, 3 or 4 times the game's 60 fps (not 144 / 165 Hz) and V-Sync.
+std::string App::black_frames_note() {
+    if (!settings_.black_frames) return "";
+    if (!settings_.vsync) return "needs V-Sync";
+    const double refresh = refresh_rate();
+    const int per = (int)std::lround(refresh / kEmuFps);
+    char buf[48];
+    if (per >= 2 && std::fabs(refresh - per * kEmuFps) < per * 1.0) snprintf(buf, sizeof(buf), "%.0f Hz", refresh);
+    else snprintf(buf, sizeof(buf), "needs 120 Hz (now %.0f)", refresh);
+    return buf;
+}
+
 uint32_t App::accent() const {
     if (mode_ == Mode::Playing && current_ >= 0) return games_[current_].module->accent_color();
     return launcher_sel_ < kGameCount ? games_[launcher_sel_].module->accent_color() : 0xFFE8B84A;
@@ -190,10 +202,16 @@ void App::frame(double dt) {
     // measured there, so a phone that drops to 60 Hz or 90 Hz is followed).
     const int per = std::max(1, (int)std::lround(refresh / kEmuFps));
 #else
-    const int per = 1;
+    // (and at 120 / 180 / 240 Hz for black frame insertion)
+    const int per = settings_.black_frames ? std::max(1, (int)std::lround(refresh / kEmuFps)) : 1;
 #endif
-    if (settings_.vsync && !fast_forward_ && std::fabs(refresh - per * kEmuFps) < per * 1.0) {
-        frames = ++vsync_phase_ % per == 0 ? 1 : 0;
+    const bool locked = settings_.vsync && std::fabs(refresh - per * kEmuFps) < per * 1.0;
+    const int phase = locked ? (int)(++vsync_phase_ % per) : 0;
+    // Black frame insertion: of the refreshes each game frame gets, the first half show it and the rest are black
+    // (120 Hz: 1 + 1, 180 Hz: 1 + 2, 240 Hz: 2 + 2), so each picture is lit as briefly as at 120 Hz.
+    black_frame_ = settings_.black_frames && locked && per >= 2 && phase >= std::max(1, per / 2);
+    if (locked && !fast_forward_) {
+        frames = phase == 0 ? 1 : 0;
         frame_acc_ = 0;
     } else {
         // Fast forward runs at 4x real time, whatever the display's refresh rate.
@@ -293,13 +311,15 @@ void App::frame(double dt) {
         snprintf(buf, sizeof(buf), "%.1f fps", fps_display_);
         video_.draw_text(FontId::Small, W - H * 0.02f, H * 0.01f, buf, 0xFFFFFF80, Align::Right);
     }
+    // a black frame: everything was still updated and drawn (menus, pop-ups and their timers), then covered
+    if (black_frame_) video_.fill_rect({0, 0, W, H}, 0xFF000000);
     if (!pending_shot_.empty()) {
         std::vector<uint32_t> px;
         int w, h;
         if (video_.capture(px, w, h)) write_png(path_join(autotest_dir_, from_utf8(pending_shot_) + L".png"), px.data(), w, h);
         pending_shot_.clear();
     }
-    if (recording_) record_frame();
+    if (recording_ && !black_frame_) record_frame();
 #ifdef __ANDROID__
     work_end_ = SDL_GetPerformanceCounter();   // the frame's work, before the wait for the display (perf log)
 #endif
@@ -394,6 +414,8 @@ void App::run_script() {
             else if (k == "color") settings_.color = (ColorMode)std::clamp(v, 0, (int)ColorMode::Count - 1);
             else if (k == "filter") settings_.filter = std::clamp(v, 0, 4);
             else if (k == "hud_anchor") settings_.hud_anchor = v != 0;
+            else if (k == "black_frames") settings_.black_frames = v != 0;
+            else if (k == "refresh") test_refresh_ = v;
             apply_settings();
             break;
         }

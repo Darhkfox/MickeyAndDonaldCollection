@@ -269,6 +269,14 @@
                          (smooth), Scanlines or CRT.
                                                 (default: Sharp bilinear)
      VSync ............. Sync to the monitor's refresh rate. (default: ON)
+     Black Frame Insertion  Sharper motion, like a CRT: each game frame is
+                         followed by a black one. Needs V-Sync and the
+                         display at 120, 180 or 240 Hz (144 or 165 Hz
+                         can't line up with the games' 60 frames a second:
+                         set 120 Hz in Windows' display settings). The
+                         picture gets darker, so you may want to turn your
+                         screen's brightness up. Next to the switch: the
+                         rate in use, or what's missing.  (default: OFF)
      Remove Sprite Flicker .. Lifts the console's limit on sprites per line,
                          so busy scenes don't flicker.   (default: ON)
      Show FPS .......... Frame rate in the corner.       (default: OFF)
@@ -466,6 +474,13 @@
   "Direct3D 11 could not be initialised"
      Update your graphics driver. The port needs a DirectX 11 capable GPU
      (anything from the last 10+ years).
+
+  Black frame insertion flickers or pulses
+     Every other refresh has to be black, exactly in step with the display.
+     Play in fullscreen, keep the display at a fixed 120 Hz (switch G-Sync /
+     FreeSync off for the game) and close anything heavy running alongside.
+     Some people see a 60 Hz flicker with it, as with a CRT -- if it
+     bothers you, switch it off.
 
   A gamepad doesn't work
      Check Options > Controls > Device: it lists the connected controllers.

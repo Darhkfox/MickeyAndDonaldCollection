@@ -158,6 +158,7 @@ private:
     double time_ = 0;
     double frame_acc_ = 0;
     unsigned vsync_phase_ = 0;           // display refreshes counted, for one game frame every N of them
+    bool black_frame_ = false;           // this refresh is one of black frame insertion's black ones
     double fps_display_ = 0;
     int    fps_frames_ = 0;
     double fps_timer_ = 0;
@@ -172,6 +173,7 @@ private:
     // 9 replay pad input (trailer gameplay found by tools/trailer/bot.py), 10 set a video setting, 11 award an achievement
     struct ScriptStep { int frame; int vk; int action; std::string arg; };
     bool autotest_ = false;
+    double test_refresh_ = 0;            // autotest "set refresh=120": the display rate to assume (Windows)
     bool autotest_realtime_ = false;            // script "realtime 1": real elapsed time instead of 1/60 s per loop
     uint64_t stat_runs_ = 0, stat_pops_ = 0;   // emulated frames run / rewind states popped (autotest marks)
     // --capture-size WxH (with --autotest): fixed client size; "record <name>" writes every displayed frame and
@@ -211,6 +213,7 @@ private:
     void resize_window_to_scale();
     void move_to_monitor(int index);
     double refresh_rate();
+    std::string black_frames_note();     // Video menu: the refresh rate in use, or why black frames can't be shown
     void apply_settings();
     void save_settings();
 
