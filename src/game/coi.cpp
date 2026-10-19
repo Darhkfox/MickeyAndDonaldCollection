@@ -115,9 +115,16 @@ const std::vector<RomPatch> kMaxPower = {
     {0x00972A, {0x7003}, {0x7005}}, {0x009746, {0x0002}, {0x0005}}, {0x00970C, {0x6718}, {0x6018}},
 };
 const std::vector<RomPatch> kDebugSelect = {{0x009F6C, {0x4E75}, {0x4E71}}};
-// Mickey's ground speed is capped at $16000 (1.375 px/frame, 16.16): once he reaches it, the cap written becomes
-// $25000 (2.3125 px/frame) - the Game Genie codes AMFA-AABN + ADFA-BAVR, the immediate of `move.l #$16000, d1`.
-const std::vector<RomPatch> kWalkFast = {{0x00CA2C, {0x0001, 0x6000}, {0x0002, 0x5000}}};
+// Mickey's ground speed is capped at $16000 (1.375 px/frame, 16.16) by `cmpi.l #$16000, d1` (twice) and
+// `move.l #$16000, d1` at $CA18-$CA2F. The Game Genie codes AMFA-AABN + ADFA-BAVR change only the move to $25000
+// (2.3125 px/frame), so above 1.5 px/frame the game's slow-down step eases him back below the old cap and he snaps
+// up again (a sawtooth); raising the two compares too makes it a steady 2.3125.
+// The step that eases him down to the cap runs when he is faster than cap + $2000 (`cmpi.l #$18000, d0` at $C8F0,
+// whose result only this code reads): it moves with the cap, or at the new cap he could never slow down.
+const std::vector<RomPatch> kWalkFast = {{0x00C8F2, {0x0001, 0x8000}, {0x0002, 0x7000}},
+                                         {0x00CA1A, {0x0001, 0x6000}, {0x0002, 0x5000}},
+                                         {0x00CA24, {0x0001, 0x6000}, {0x0002, 0x5000}},
+                                         {0x00CA2C, {0x0001, 0x6000}, {0x0002, 0x5000}}};
 // The jump-hold routine ($C8A8): while the jump button is held, the first $14 frames keep the rising speed, until
 // the jump is marked over. Moon Jump (Game Genie RHEA-A6ZW + RHEA-A60G) ignores the "over" flag and the 20-frame
 // limit: Mickey rises for as long as the button is held. Jump in Midair (+ A1EA-AAF0) tests the button's new press
@@ -613,7 +620,7 @@ public:
             {"inf_items", "Infinite Items", "Apples, marbles and gems never run out."},
             {"inf_continues", "Infinite Continues", "Game over never uses up a continue."},
             {"max_power", "Start With Full Power", "Mickey starts every level with 5 power stars (on Hard: every round and restart)."},
-            {"walk_fast", "Walk Faster", "Mickey's top walking speed goes from 1.4 to 2.3 pixels a frame (Game Genie AMFA-AABN + ADFA-BAVR)."},
+            {"walk_fast", "Walk Faster", "Mickey walks at a steady 2.3 pixels a frame instead of 1.4 (based on Game Genie AMFA-AABN + ADFA-BAVR)."},
             {"moon_jump", "Moon Jump", "Mickey keeps rising for as long as the jump button is held (Game Genie RHEA-A6ZW + RHEA-A60G)."},
             {"midair_jump", "Jump in Midair", "Every press of jump lifts Mickey again, even in the air (Game Genie RHEA-A6ZW + RHEA-A60G + A1EA-AAF0)."},
             {"debug_select", "Developer Level Select", "Re-enables the hidden level select on the OPTIONS screen: A steps through the levels, START plays it. (B works too, but also changes the highlighted option.)"},
