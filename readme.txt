@@ -205,8 +205,11 @@
      (see ACHIEVEMENTS below).
        Castle of Illusion ... Invincibility, Infinite Power, Infinite Tries,
                               Infinite Items, Infinite Continues, Start With
-                              Full Power, and the developers' hidden level
-                              select on the OPTIONS screen.
+                              Full Power, Walk Faster, Moon Jump (keep
+                              rising while jump is held), Jump in Midair
+                              (every press lifts Mickey again) -- the classic
+                              Game Genie codes -- and the developers' hidden
+                              level select on the OPTIONS screen.
        QuackShot ............ Invincibility, Infinite Health, Infinite Lives,
                               Infinite Ammo, All Weapons (bubble gum and the
                               red and green plungers), Endless or Permanent

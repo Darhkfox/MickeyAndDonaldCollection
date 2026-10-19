@@ -115,6 +115,15 @@ const std::vector<RomPatch> kMaxPower = {
     {0x00972A, {0x7003}, {0x7005}}, {0x009746, {0x0002}, {0x0005}}, {0x00970C, {0x6718}, {0x6018}},
 };
 const std::vector<RomPatch> kDebugSelect = {{0x009F6C, {0x4E75}, {0x4E71}}};
+// Mickey's ground speed is capped at $16000 (1.375 px/frame, 16.16): once he reaches it, the cap written becomes
+// $25000 (2.3125 px/frame) - the Game Genie codes AMFA-AABN + ADFA-BAVR, the immediate of `move.l #$16000, d1`.
+const std::vector<RomPatch> kWalkFast = {{0x00CA2C, {0x0001, 0x6000}, {0x0002, 0x5000}}};
+// The jump-hold routine ($C8A8): while the jump button is held, the first $14 frames keep the rising speed, until
+// the jump is marked over. Moon Jump (Game Genie RHEA-A6ZW + RHEA-A60G) ignores the "over" flag and the 20-frame
+// limit: Mickey rises for as long as the button is held. Jump in Midair (+ A1EA-AAF0) tests the button's new press
+// (bit 5 of $F310) instead of its hold (bit 13): every press in the air lifts him again.
+const std::vector<RomPatch> kMoonJump = {{0x00C8B2, {0x662C}, {0x4E71}}, {0x00C8C6, {0x6408}, {0x4E71}}};
+const std::vector<RomPatch> kMidairJump = {{0x00C8B6, {0x000D}, {0x0005}}};
 
 // ---- widescreen (docs/re_coi_wide.md) --------------------------------------------------------------
 // Tile streaming needs no change (the engine keeps the whole 512-px plane valid). The patches widen
@@ -384,6 +393,9 @@ public:
         if (cfg.cheat("inf_continues")) add(kInfContinues);
         if (cfg.cheat("max_power")) add(kMaxPower);
         if (cfg.cheat("debug_select")) add(kDebugSelect);
+        if (cfg.cheat("walk_fast")) add(kWalkFast);
+        if (cfg.cheat("moon_jump") || cfg.cheat("midair_jump")) add(kMoonJump);
+        if (cfg.cheat("midair_jump")) add(kMidairJump);
         if (cfg.ext > 0) add(wide_patches(cfg.ext));
         return p;
     }
@@ -601,6 +613,9 @@ public:
             {"inf_items", "Infinite Items", "Apples, marbles and gems never run out."},
             {"inf_continues", "Infinite Continues", "Game over never uses up a continue."},
             {"max_power", "Start With Full Power", "Mickey starts every level with 5 power stars (on Hard: every round and restart)."},
+            {"walk_fast", "Walk Faster", "Mickey's top walking speed goes from 1.4 to 2.3 pixels a frame (Game Genie AMFA-AABN + ADFA-BAVR)."},
+            {"moon_jump", "Moon Jump", "Mickey keeps rising for as long as the jump button is held (Game Genie RHEA-A6ZW + RHEA-A60G)."},
+            {"midair_jump", "Jump in Midair", "Every press of jump lifts Mickey again, even in the air (Game Genie RHEA-A6ZW + RHEA-A60G + A1EA-AAF0)."},
             {"debug_select", "Developer Level Select", "Re-enables the hidden level select on the OPTIONS screen: A steps through the levels, START plays it. (B works too, but also changes the highlighted option.)"},
         };
     }

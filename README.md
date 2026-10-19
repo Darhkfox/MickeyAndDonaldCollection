@@ -127,8 +127,9 @@ that fits the screen (2:1 on most phones).
   things like the 52 cards of World of Illusion.
 
 **Cheats** (pause menu, applied at once; switch achievements off first)
-- Castle of Illusion: invincibility, infinite power, tries, items and continues, start with full power, and
-  the developers' hidden level select on the OPTIONS screen.
+- Castle of Illusion: invincibility, infinite power, tries, items and continues, start with full power, walk
+  faster, moon jump, jump in midair (the classic Game Genie codes), and the developers' hidden level select on
+  the OPTIONS screen.
 - QuackShot: invincibility, infinite health, lives and ammo, all weapons / plungers, endless or permanent
   Quack Attack, and the developers' hidden free-movement (fly) mode.
 - World of Illusion: invincibility, infinite hearts and tries, maximum hearts (both players).
