@@ -142,12 +142,11 @@ void App::draw_ach_banners(float dt) {
     Rect r = {(W - w) * 0.5f, H * 0.025f - (1.0f - slide) * (h + H * 0.025f), w, h};
     video_.fill_round_rect(r, h * 0.2f, with_alpha(0xF0141824, a));
     video_.outline_round_rect(r, h * 0.2f, std::max(1.5f, H / 480.0f), with_alpha(gold, a));
-    // the badge: a dark star on a gold disc
+    // the badge: a gold star in a gold ring
     const Rect ic = {r.x + pad * 1.1f, r.y + (h - icon) * 0.5f, icon, icon};
-    video_.fill_round_rect(ic, icon * 0.5f, with_alpha(gold, a));
-    const float star_s = icon * 0.9f / std::max(1.0f, video_.line_height(FontId::Title));
-    video_.draw_text(FontId::Title, ic.x + icon * 0.5f, ic.y + (icon - video_.line_height(FontId::Title, star_s)) * 0.5f,
-                     "\xE2\x98\x85", with_alpha(0xFF141824, a), Align::Center, star_s);
+    video_.fill_round_rect(ic, icon * 0.5f, with_alpha(0xFF262B38, a));
+    video_.outline_round_rect(ic, icon * 0.5f, std::max(1.5f, icon * 0.06f), with_alpha(gold, a));
+    video_.fill_star(ic.x + icon * 0.5f, ic.y + icon * 0.5f, icon * 0.36f, with_alpha(gold, a));
     const float tx = ic.x + icon + pad;
     float y = r.y + pad * 0.8f;
     video_.draw_text(FontId::Small, tx, y, head, with_alpha(gold, a));

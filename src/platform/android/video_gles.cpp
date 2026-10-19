@@ -115,7 +115,18 @@ flat in float v_mode;
 out vec4 o_col;
 void main() {
     float a = 1.0;
-    if (v_mode > 1.5) {            // rounded rect SDF; uv = pixel offset from centre, prm = hw, hh, r, stroke
+    if (v_mode > 2.5) {            // five-pointed star SDF, point up; uv = pixel offset from centre, prm = r, inner ratio
+        const vec2 k1 = vec2(0.809016994, -0.587785252);
+        const vec2 k2 = vec2(-k1.x, k1.y);
+        vec2 p = vec2(abs(v_uv.x), -v_uv.y);
+        p -= 2.0 * max(dot(k1, p), 0.0) * k1;
+        p -= 2.0 * max(dot(k2, p), 0.0) * k2;
+        p.x = abs(p.x);
+        p.y -= v_prm.x;
+        vec2 ba = v_prm.y * vec2(-k1.y, k1.x) - vec2(0.0, 1.0);
+        float h = clamp(dot(p, ba) / dot(ba, ba), 0.0, v_prm.x);
+        a = clamp(0.5 - length(p - ba * h) * sign(p.y * ba.x - p.x * ba.y), 0.0, 1.0);
+    } else if (v_mode > 1.5) {     // rounded rect SDF; uv = pixel offset from centre, prm = hw, hh, r, stroke
         vec2 q = abs(v_uv) - v_prm.xy + v_prm.z;
         float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - v_prm.z;
         a = clamp(0.5 - d, 0.0, 1.0);
@@ -487,6 +498,15 @@ struct Video::Impl {
         uint32_t c = to_rgba(color);
         quad(x0, y0, x1, y1, c, c, x0 - cx, y0 - cy, x1 - cx, y1 - cy, prm, 2.0f);
     }
+
+    void star(float cx, float cy, float r, uint32_t color) {
+        if (r <= 0) return;
+        cy += r * 0.0955f;   // (the points reach r up but only 0.809 r down: centre the outline, not the maths)
+        float prm[4] = { r, 0.382f, 0, 0 };
+        float x0 = cx - r - 1, y0 = cy - r - 1, x1 = cx + r + 1, y1 = cy + r + 1;
+        uint32_t c = to_rgba(color);
+        quad(x0, y0, x1, y1, c, c, x0 - cx, y0 - cy, x1 - cx, y1 - cy, prm, 3.0f);
+    }
 };
 
 // ---- public API ---------------------------------------------------------------------
@@ -597,6 +617,8 @@ void Video::fill_round_rect(Rect r, float radius, uint32_t color) { impl->round_
 void Video::outline_round_rect(Rect r, float radius, float thickness, uint32_t color) {
     if (thickness > 0) impl->round_rect(r, radius, thickness, color);
 }
+
+void Video::fill_star(float cx, float cy, float radius, uint32_t color) { impl->star(cx, cy, radius, color); }
 
 void Video::draw_text(FontId font, float x, float y, const std::string& utf8, uint32_t color, Align align, float scale) {
     Impl& I = *impl;

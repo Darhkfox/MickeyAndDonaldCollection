@@ -51,6 +51,7 @@ public:
     void fill_rect_gradient(Rect r, uint32_t top, uint32_t bottom);
     void fill_round_rect(Rect r, float radius, uint32_t color);   // anti-aliased edges
     void outline_round_rect(Rect r, float radius, float thickness, uint32_t color);
+    void fill_star(float cx, float cy, float radius, uint32_t color);   // five points, point up, outline centred
 
     // Text is rendered from glyph atlases built at init via GDI/DirectWrite.
     // `scale` multiplies the font's native pixel size. Supports printable ASCII
