@@ -76,10 +76,11 @@ void Session::soft_reset() {
 
 bool Session::start_level(int index, int variant) {
     if (!module_) return false;
+    // (the soundtrack stops first: the level's music is asked for during the start-up frames)
+    if (mdplus_) mdplus_->stop();
     bool ok = module_->start_level(*md_, want_, index, variant);   // starts from power-on
     switch_config();
     mixer_.reset();
-    if (mdplus_) mdplus_->stop();
     return ok;
 }
 
