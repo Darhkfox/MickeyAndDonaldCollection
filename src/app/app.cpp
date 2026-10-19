@@ -127,6 +127,26 @@ uint16_t App::pad_state(int p) {
 bool App::any_game_button_held() { return pad_state(0) != 0 || pad_state(1) != 0; }
 
 // A hold-to-use hotkey: its key or pad button on any controller, unless a player has bound it to a game button.
+void App::bind_hotkey_key(int h, int vk) {
+    const int old = settings_.hotkey_keys[h];
+    for (int q = 0; q < 2; q++)
+        for (int a = 0; a < ACT_COUNT; a++)
+            if (settings_.keys[q][a] == vk) settings_.keys[q][a] = old;
+    for (int g = 0; g < HK_COUNT; g++)
+        if (g != h && settings_.hotkey_keys[g] == vk) settings_.hotkey_keys[g] = old;
+    settings_.hotkey_keys[h] = vk;
+}
+
+void App::bind_hotkey_pad(int h, uint32_t button) {
+    const uint32_t old = settings_.hotkey_pads[h];
+    for (int q = 0; q < 2; q++)
+        for (int a = 0; a < ACT_COUNT; a++)
+            if (settings_.pad_buttons[q][a] == button) settings_.pad_buttons[q][a] = old;
+    for (int g = 0; g < HK_COUNT; g++)
+        if (g != h && settings_.hotkey_pads[g] == button) settings_.hotkey_pads[g] = old;
+    settings_.hotkey_pads[h] = button;
+}
+
 bool App::hold_hotkey(int vk, uint32_t pad_button) {
     bool key_free = true, pad_free = true;
     for (int p = 0; p < 2; p++)
@@ -171,7 +191,8 @@ void App::frame(double dt) {
     if (input_.key_pressed(VK_F11)) { settings_.fullscreen = !is_fullscreen_; set_fullscreen(settings_.fullscreen); }
     if (input_.key_pressed(VK_F12)) screenshot();
     const bool in_play = mode_ == Mode::Playing && session_ && !menu_.active() && !jukebox_.active();
-    bool rewind_held = hold_hotkey('R', PAD_LT), ff_held = hold_hotkey(VK_TAB, PAD_RT);
+    bool rewind_held = hold_hotkey(settings_.hotkey_keys[HK_REWIND], settings_.hotkey_pads[HK_REWIND]);
+    bool ff_held = hold_hotkey(settings_.hotkey_keys[HK_FAST_FORWARD], settings_.hotkey_pads[HK_FAST_FORWARD]);
 #ifdef __ANDROID__
     rewind_held = rewind_held || touch_.held(TouchControls::BtnRewind);
     ff_held = ff_held || touch_.held(TouchControls::BtnFF);

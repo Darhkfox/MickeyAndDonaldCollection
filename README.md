@@ -162,8 +162,9 @@ that fits the screen (2:1 on most phones).
 | Screenshot | F12 |
 
 Player 1 uses the first connected gamepad plus the keyboard; player 2 the second gamepad or the P2 keys.
-Each player's keys, buttons and pad can be changed under *Options → Controls*. A key or button bound to a
-game button keeps that role (e.g. a trigger mapped to A no longer rewinds). Tools such as DS4Windows or
+Each player's keys, buttons and pad can be changed under *Options → Controls*, and so can the keys and pad
+buttons for fast forward and rewind (on Player 1's page). Picking a key or button that is already in use swaps
+the two. Tools such as DS4Windows or
 Steam Input can make one controller appear twice; if one pad moves both players, pick each player's
 *Device* by hand.
 

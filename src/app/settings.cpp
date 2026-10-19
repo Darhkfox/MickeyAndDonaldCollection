@@ -9,6 +9,7 @@
 #include <vector>
 
 static const char* kActionKeys[ACT_COUNT] = {"up", "down", "left", "right", "a", "b", "c", "start"};
+static const char* kHotkeyKeys[HK_COUNT] = {"fast_forward", "rewind"};
 
 Settings::Settings() { reset_keys(); }
 
@@ -23,6 +24,10 @@ void Settings::reset_keys() {
         pad_buttons[0][i] = pad[i];
         pad_buttons[1][i] = pad[i];
     }
+    hotkey_keys[HK_FAST_FORWARD] = VK_TAB;
+    hotkey_keys[HK_REWIND] = 'R';
+    hotkey_pads[HK_FAST_FORWARD] = PAD_RT;
+    hotkey_pads[HK_REWIND] = PAD_LT;
 }
 
 int resolve_player_pad(const int pad_index[2], const bool* connected, int slots, int player) {
@@ -132,6 +137,10 @@ bool Settings::load(const std::wstring& path) {
                 if (k == std::string("key_") + kActionKeys[a]) keys[p][a] = iv;
                 else if (k == std::string("pad_") + kActionKeys[a]) pad_buttons[p][a] = (uint32_t)strtoul(v.c_str(), nullptr, 0);
             }
+            for (int h = 0; h < HK_COUNT && p == 0; h++) {
+                if (k == std::string("key_") + kHotkeyKeys[h]) hotkey_keys[h] = iv;
+                else if (k == std::string("pad_") + kHotkeyKeys[h]) hotkey_pads[h] = (uint32_t)strtoul(v.c_str(), nullptr, 0);
+            }
             if (k == "pad_index") pad_index[p] = clampi(iv, -1, Input::kMaxPads - 1);
             else if (k == "stick_as_dpad" && p == 0) stick_as_dpad = iv != 0;
         } else if (section.rfind("cheats.", 0) == 0) {
@@ -166,7 +175,12 @@ bool Settings::save(const std::wstring& path) const {
         for (int a = 0; a < ACT_COUNT; a++) o << "key_" << kActionKeys[a] << "=" << keys[p][a] << "\n";
         for (int a = 0; a < ACT_COUNT; a++) o << "pad_" << kActionKeys[a] << "=0x" << std::hex << pad_buttons[p][a] << std::dec << "\n";
         o << "pad_index=" << pad_index[p] << "\n";
-        if (p == 0) o << "stick_as_dpad=" << stick_as_dpad << "\n";
+        if (p == 0) {
+            o << "stick_as_dpad=" << stick_as_dpad << "\n";
+            for (int h = 0; h < HK_COUNT; h++)
+                o << "key_" << kHotkeyKeys[h] << "=" << hotkey_keys[h] << "\npad_" << kHotkeyKeys[h] << "=0x" << std::hex
+                  << hotkey_pads[h] << std::dec << "\n";
+        }
     }
     for (auto& g : cheats) {
         o << "\n[cheats." << g.first << "]\n";

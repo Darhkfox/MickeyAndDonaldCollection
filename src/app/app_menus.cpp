@@ -86,12 +86,12 @@ void App::open_options_menu(bool from_launcher) {
     p.items.push_back(MenuItem::header("Speed"));
     MenuItem ff = MenuItem::toggle("Fast Forward", [this]() { return settings_.fast_forward && !settings_.achievements; },
                                    [this](bool v) { settings_.fast_forward = v; },
-                                   "Hold Tab or the right trigger to run the game at 4x speed.");
+                                   "Hold the fast forward key or button (Tab / RT unless changed under Controls) for 4x speed.");
     ff.enabled = [this]() { return !settings_.achievements; };
     p.items.push_back(ff);
     MenuItem rw = MenuItem::toggle("Rewind", [this]() { return settings_.rewind && !settings_.achievements; },
                                    [this](bool v) { settings_.rewind = v; if (!v) rewind_.clear(); },
-                                   "Hold R or the left trigger to step back through the last minute of play.");
+                                   "Hold the rewind key or button (R / LT unless changed under Controls) to step back up to a minute.");
     rw.enabled = [this]() { return !settings_.achievements; };
     p.items.push_back(rw);
     // (right under what it switches off)
@@ -110,8 +110,12 @@ void App::open_options_menu(bool from_launcher) {
     p.items.push_back(MenuItem::info("Menu", []() { return std::string("Esc / (Back)"); }));
     p.items.push_back(MenuItem::info("Fullscreen", []() { return std::string("F11 / Alt+Enter"); }));
     p.items.push_back(MenuItem::info("Quick save / load", []() { return std::string("F5 / F9"); }));
-    p.items.push_back(MenuItem::info("Fast forward (hold)", []() { return std::string("Tab / RT"); }));
-    p.items.push_back(MenuItem::info("Rewind (hold)", []() { return std::string("R / LT"); }));
+    for (int h = 0; h < HK_COUNT; h++)
+        p.items.push_back(MenuItem::info(h == HK_FAST_FORWARD ? "Fast forward (hold)" : "Rewind (hold)", [this, h]() {
+            const int vk = settings_.hotkey_keys[h];
+            const uint32_t b = settings_.hotkey_pads[h];
+            return (vk ? Input::key_name(vk) : std::string("-")) + " / " + (b ? Input::pad_button_name(b) : std::string("-"));
+        }));
     p.items.push_back(MenuItem::info("Screenshot", []() { return std::string("F12"); }));
 #endif
     p.on_back = [this]() { save_settings(); };
@@ -296,15 +300,28 @@ MenuPage App::controls_page(int player) {
         it.label = std::string(action_name(a));
         it.value_text = [this, player, a]() { int vk = settings_.keys[player][a]; return vk ? Input::key_name(vk) : std::string("-"); };
         it.on_bind = [this, player, a](int vk, uint32_t) {
-            // A key can only do one thing: if another action (either player) has it, they swap.
+            // A key can only do one thing: if another action (either player, or a hotkey) has it, they swap.
             for (int q = 0; q < 2; q++)
                 for (int b = 0; b < ACT_COUNT; b++)
                     if (settings_.keys[q][b] == vk && (q != player || b != a)) settings_.keys[q][b] = settings_.keys[player][a];
+            for (int h = 0; h < HK_COUNT; h++)
+                if (settings_.hotkey_keys[h] == vk) settings_.hotkey_keys[h] = settings_.keys[player][a];
             settings_.keys[player][a] = vk;
         };
         it.hint = "Press Enter, then the new key (a key already in use swaps). Esc cancels.";
         p.items.push_back(it);
     }
+    static const char* kHotkeyNames[HK_COUNT] = {"Fast Forward (hold)", "Rewind (hold)"};
+    if (player == 0)
+        for (int h = 0; h < HK_COUNT; h++) {
+            MenuItem it;
+            it.kind = MenuItem::Bind;
+            it.label = kHotkeyNames[h];
+            it.value_text = [this, h]() { int vk = settings_.hotkey_keys[h]; return vk ? Input::key_name(vk) : std::string("-"); };
+            it.on_bind = [this, h](int vk, uint32_t) { bind_hotkey_key(h, vk); };
+            it.hint = "Press Enter, then the new key (a key already in use swaps). Esc cancels.";
+            p.items.push_back(it);
+        }
     p.items.push_back(MenuItem::header("Gamepad"));
     // Name the controllers connected now, so a player can tell the slots apart.
     std::vector<std::string> pads = {player == 0 ? "Auto (first free pad)" : "Auto (next free pad)"};
@@ -325,13 +342,26 @@ MenuPage App::controls_page(int player) {
             return b ? Input::pad_button_name(b) : std::string("-");
         };
         it.on_bind = [this, player, a](int, uint32_t b) {
-            for (int c = 0; c < ACT_COUNT; c++)   // swap with the action that had this button
+            for (int c = 0; c < ACT_COUNT; c++)   // swap with the action (or hotkey) that had this button
                 if (settings_.pad_buttons[player][c] == b && c != a) settings_.pad_buttons[player][c] = settings_.pad_buttons[player][a];
+            for (int h = 0; h < HK_COUNT; h++)
+                if (settings_.hotkey_pads[h] == b) settings_.hotkey_pads[h] = settings_.pad_buttons[player][a];
             settings_.pad_buttons[player][a] = b;
         };
         it.hint = "Press Enter / (A), then the new pad button. Esc cancels.";
         p.items.push_back(it);
     }
+    if (player == 0)
+        for (int h = 0; h < HK_COUNT; h++) {
+            MenuItem it;
+            it.kind = MenuItem::Bind;
+            it.bind_pad = true;
+            it.label = kHotkeyNames[h];
+            it.value_text = [this, h]() { uint32_t b = settings_.hotkey_pads[h]; return b ? Input::pad_button_name(b) : std::string("-"); };
+            it.on_bind = [this, h](int, uint32_t b) { bind_hotkey_pad(h, b); };
+            it.hint = "Press Enter / (A), then the new pad button. Esc cancels.";
+            p.items.push_back(it);
+        }
     if (player == 0)
         p.items.push_back(MenuItem::toggle("Left Stick Moves", [this]() { return settings_.stick_as_dpad; },
                                            [this](bool v) { settings_.stick_as_dpad = v; }));
@@ -341,6 +371,11 @@ MenuPage App::controls_page(int player) {
             settings_.keys[player][a] = d.keys[player][a];
             settings_.pad_buttons[player][a] = d.pad_buttons[player][a];
         }
+        if (player == 0)
+            for (int h = 0; h < HK_COUNT; h++) {
+                settings_.hotkey_keys[h] = d.hotkey_keys[h];
+                settings_.hotkey_pads[h] = d.hotkey_pads[h];
+            }
         settings_.pad_index[player] = -1;
         menu_.toast("Controls reset");
     }));

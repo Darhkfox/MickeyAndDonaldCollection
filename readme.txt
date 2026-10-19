@@ -141,8 +141,8 @@
      F11 ............ Fullscreen / window (Alt+Enter works too)
      F12 ............ Screenshot         (saved in a "screenshots" folder)
 
-  A key or pad button you bind to a game button keeps that job instead
-  (for example, if you map a trigger to A, it no longer rewinds).
+  The fast forward and rewind keys and pad buttons can be changed under
+  Options > Controls (Player 1's page), like the game buttons.
 
 
 --------------------------------------------------------------------------------
@@ -302,10 +302,11 @@
                          and Soundtrack Volume.          (default: 70%)
 
   CONTROLS  (and CONTROLS - PLAYER 2)
-     Keyboard keys and gamepad buttons for each Mega Drive button. Highlight
-     one, press Enter, then the new key or button (a key already in use
-     swaps; Esc cancels). Also: Device (which pad), Left Stick Moves
-     (default ON) and Reset to Defaults.
+     Keyboard keys and gamepad buttons for each Mega Drive button, and (on
+     Player 1's page) for Fast Forward and Rewind. Highlight one, press
+     Enter, then the new key or button (one already in use swaps; Esc
+     cancels). Also: Device (which pad), Left Stick Moves (default ON) and
+     Reset to Defaults.
 
   ACHIEVEMENTS
      Achievements ...... Earn achievements as you play. While this is on,
@@ -314,11 +315,13 @@
                          count from the next Reset Game.  (default: ON)
 
   SPEED
-     Fast Forward ...... Hold Tab or the right trigger for 4x speed.
+     Fast Forward ...... Hold Tab or the right trigger for 4x speed (the
+                         key and button can be changed under Controls).
                          Only while achievements are off. (default: ON)
      Rewind ............ Hold R or the left trigger to step back through the
-                         last minute of play. Only while achievements are
-                         off.                            (default: ON)
+                         last minute of play (changeable under Controls
+                         too). Only while achievements are off.
+                                                         (default: ON)
 
 
 --------------------------------------------------------------------------------

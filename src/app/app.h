@@ -226,6 +226,8 @@ private:
     uint16_t pad_state(int player);
     bool any_game_button_held();
     bool hold_hotkey(int vk, uint32_t pad_button);
+    void bind_hotkey_key(int h, int vk);           // Controls: a hotkey's new key / pad button (an action or the other
+    void bind_hotkey_pad(int h, uint32_t button);  // hotkey that had it gets the old one)
     void rewind_step(double dt);
 
     void frame(double dt);
