@@ -83,7 +83,8 @@ public:
     float toast_cover() const;
 
     // Simple confirmation dialog.
-    void confirm(const std::string& question, std::function<void()> yes, const std::string& detail = "");
+    // Yes / No; No is selected unless `default_yes` (the question confirms a choice just made, e.g. a stage)
+    void confirm(const std::string& question, std::function<void()> yes, const std::string& detail = "", bool default_yes = false);
 
 private:
     std::vector<MenuPage> stack_;

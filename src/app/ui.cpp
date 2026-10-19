@@ -368,12 +368,12 @@ void Menu::draw_toasts(Video& v, float dt, bool bottom) {
     }
 }
 
-void Menu::confirm(const std::string& question, std::function<void()> yes, const std::string& detail) {
+void Menu::confirm(const std::string& question, std::function<void()> yes, const std::string& detail, bool default_yes) {
     MenuPage p;
     p.title = question;
     p.subtitle = detail;
     p.items.push_back(MenuItem::action("Yes", [this, yes]() { auto y = yes; pop(); y(); }));
     p.items.push_back(MenuItem::action("No", [this]() { pop(); }));
-    p.sel = 1;
+    p.sel = default_yes ? 0 : 1;
     push(std::move(p));
 }

@@ -394,7 +394,7 @@ MenuPage App::level_page() {
                 }
                 else menu_.toast("Could not start that level");
                 block_game_input_ = true;
-            }, group + ". Current progress will be lost.");
+            }, group + ". Current progress will be lost.", true);
         });
         unsigned mask = lv[i].variants;
         if (mask) it.enabled = [this, mask]() { return ((mask >> level_variant_) & 1) != 0; };
