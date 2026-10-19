@@ -41,6 +41,11 @@ struct FrameInfo {
     int  mask_right = 0;     // pixels of the right extension to black out (0..ext)
     int  mask_lines = 0;     // edge masks cover lines [0, mask_lines) only (0 = all lines), e.g. to spare a status bar
     bool pillar_below = false; // lines [mask_lines, end) are pillarboxed (HUD shown at its original width)
+    // Scenery outside the play area (a boss arena the 4:3 camera never shows past): pixels of the extension shown
+    // dimmed instead of black, on the same lines as the masks. A side past the level map's end shows the other
+    // side's strip mirrored instead (never tiles from outside the level).
+    int  dim_left = 0, dim_right = 0;
+    bool mirror_left = false, mirror_right = false;
 };
 
 struct AchievementDef {

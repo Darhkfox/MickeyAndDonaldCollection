@@ -66,7 +66,9 @@ that fits the screen (2:1 on most phones).
   and are drawn across the whole width, instead of popping in at the edges of the old 320-pixel screen.
   Where the view reaches past the columns the console's 512-pixel background layers hold (21:9, and 2:1 in
   World of Illusion), the extra columns are drawn straight from the level map.
-- The camera stays inside the level where it can; level edges and single-screen boss rooms are masked.
+- The camera stays inside the level where it can; level edges are masked. Castle of Illusion's boss fights
+  keep the game's locked 4:3 camera, so they play exactly as the original, with the room's scenery shown
+  dimmed at the sides (out of Mickey's reach).
 - The status bar / HUD is re-anchored to the screen edges (can be switched off).
 - Title screens, menus, maps and cut-scenes stay 4:3 automatically.
 - The width (and cheats) can be changed at any time, also mid-level: the patches are swapped at the next
@@ -241,7 +243,8 @@ A log line every 5 seconds gives the frame rate and the work per frame (`adb log
   Illusion: layout → block → tile).
 - **Castle of Illusion.** Tile streaming already keeps the whole 512×512 plane valid, so it needs no patch;
   sprites, objects, animated blocks and the camera clamp do. Widescreen applies in the gameplay states
-  (`$F300` = `$0E` / `$10`); the HUD lines 192–223 are remapped. Boss arenas keep the game's locked camera.
+  (`$F300` = `$0E` / `$10`); the HUD lines 192–223 are remapped. Boss arenas keep the game's locked camera;
+  the scenery beside them is dimmed, and a side past the end of the map mirrors the other side.
 - **QuackShot.** Objects are spawned from a grid of 128-pixel columns as the camera crosses them
   (`$19C08`). From 2:1 a second, farther column is processed each frame; entries placed to appear behind
   the player (swoop-in birds and others, 41 of 1,036) are held back until the camera reaches the spot they
@@ -261,11 +264,10 @@ A log line every 5 seconds gives the frame rate and the work per frame (`adb log
   (where enemies appear a little earlier) they can go off course: at 2:1 and 21:9 two of QuackShot's five
   demos end with Donald falling or stuck. With widescreen off everything is exactly original.
 - At 21:9: sprites entering at the very left edge can appear up to 20 px late, more enemies wait in the wider
-  margins, and rooms narrower than the screen show bars: QuackShot's 512-pixel rooms (Dracula, the Ghosts,
-  Pete, the final boss and a few others) have 12 pixels at each side; Castle of Illusion's boss arenas keep
-  the locked camera, so the Evil Tree and the Library boss show bars of about 90 and 75 pixels a side. In
-  Castle of Illusion, Toyland's animated blocks start moving a little after they come into view on the
-  right. In QuackShot a defeated enemy occasionally doesn't return when you scroll back.
+  margins, and QuackShot's 512-pixel rooms (Dracula, the Ghosts, Pete, the final boss and a few others) are
+  narrower than the screen, so they show bars of 12 pixels at each side. In Castle of Illusion, Toyland's
+  animated blocks start moving a little after they come into view on the right. In QuackShot a defeated
+  enemy occasionally doesn't return when you scroll back.
 - World of Illusion keeps its original camera in widescreen and slides the picture near level edges: for the
   first stretch of a level (40 px at 16:9, 64 px at 2:1) the scenery holds still while the player walks.
   There, water and cloud layers keep their own motion, a slower background can show a little more of its

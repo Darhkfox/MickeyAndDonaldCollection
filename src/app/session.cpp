@@ -99,6 +99,11 @@ void Session::run_frame(uint16_t pad1, uint16_t pad2) {
     }
     mask_lines_ = info_.mask_lines;
     pillar_below_ = info_.pillar_below && info_.gameplay;
+    const bool dims = info_.gameplay && cfg_.ext > 0;
+    dim_l_ = dims ? std::clamp(info_.dim_left, 0, cfg_.ext) : 0;
+    dim_r_ = dims ? std::clamp(info_.dim_right, 0, cfg_.ext) : 0;
+    mirror_l_ = dims && info_.mirror_left;
+    mirror_r_ = dims && info_.mirror_right;
     // Leaving gameplay closes the side masks at once (beside a menu the old picture is stale);
     // coming back they open gradually so it doesn't pop. A mask that has to grow (the view widened
     // next to a level edge, a state loaded there) closes at once too: what it covers is outside the level.
@@ -119,10 +124,21 @@ const uint32_t* Session::frame(int& w, int& h) {
     h = v.fb_lines;
     pixels_.resize((size_t)w * h);
     int ml = (int)(mask_l_ + 0.5f), mr = (int)(mask_r_ + 0.5f);
+    // dimmed scenery: about 40% brightness
+    auto dim = [](uint32_t c) {
+        return 0xFF000000u | ((((c >> 16) & 0xFF) * 102 >> 8) << 16) | ((((c >> 8) & 0xFF) * 102 >> 8) << 8) | ((c & 0xFF) * 102 >> 8);
+    };
     for (int y = 0; y < h; y++) {
         const uint16_t* src = v.fb[y];
         uint32_t* dst = &pixels_[(size_t)y * w];
         for (int x = 0; x < w; x++) dst[x] = lut_[src[x] & 0x7FF];
+        if ((dim_l_ || dim_r_) && (mask_lines_ == 0 || y < mask_lines_)) {
+            // a side past the level's end takes the other side's scenery, mirrored (before either is dimmed)
+            if (mirror_r_) for (int k = 0; k < dim_r_ && k < w; k++) dst[w - 1 - k] = k < dim_l_ ? dst[k] : 0xFF000000u;
+            if (mirror_l_) for (int k = 0; k < dim_l_ && k < w; k++) dst[k] = k < dim_r_ ? dst[w - 1 - k] : 0xFF000000u;
+            for (int x = 0; x < dim_l_ && x < w; x++) dst[x] = dim(dst[x]);
+            for (int x = std::max(0, w - dim_r_); x < w; x++) dst[x] = dim(dst[x]);
+        }
         if (mask_lines_ > 0 && y >= mask_lines_) {
             if (pillar_below_) {
                 for (int x = 0; x < cfg_.ext && x < w; x++) dst[x] = 0xFF000000u;

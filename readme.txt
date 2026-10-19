@@ -468,6 +468,10 @@
      it can, the edges of the level are masked, and the HUD moves out to the
      screen edges. With widescreen off everything is exactly as the original.
 
+     Castle of Illusion's boss fights keep the game's locked 4:3 camera, so
+     they play exactly as the original; the rest of the room is shown dimmed
+     at the sides (Mickey can't go there).
+
      A few things are worth knowing:
        - Some enemies only wake up once they reach the original 4:3 screen
          area (they wait in the extra columns), and a handful of things meant
@@ -477,10 +481,8 @@
          widescreen (where enemies appear a little earlier) they can play
          out differently: at 2:1 and 21:9 two of QuackShot's five demos end
          with Donald falling or stuck.
-       - At 21:9, rooms narrower than the screen show bars: QuackShot's
-         512-pixel boss rooms have 12 pixels at each side, and Castle of
-         Illusion's Evil Tree and Library bosses keep the game's locked
-         camera (bars of about 90 and 75 pixels a side).
+       - At 21:9, QuackShot's 512-pixel boss rooms are narrower than the
+         screen, so they show bars of 12 pixels at each side.
        - World of Illusion keeps its original camera and slides the picture
          near the level edges instead: for the first stretch of a level the
          scenery holds still while you walk, then scrolls normally.

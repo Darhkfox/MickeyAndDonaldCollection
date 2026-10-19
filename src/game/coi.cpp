@@ -434,12 +434,24 @@ public:
         info.gameplay = wide_gameplay(md);
         if (md.module_state[0] && md.ram16(MODE) == M_GAMEPLAY && sync_camera_bounds(md, E)) md.module_state[0] = 0;
         if (!info.gameplay || E == 0) return;
-        // Mask whatever the (clamped) camera still shows outside the original level bounds -
-        // only the narrow boss arenas.
+        // What the (clamped) camera shows outside the original level bounds - only in the narrow boss arenas, whose
+        // camera is locked: Mickey can't go there, so it is shown dimmed. The arenas sit at their map's right end
+        // (the 4:3 camera already reached it): past it there are no tiles of the level, so that side mirrors the
+        // scenery of the other. (Past both ends: black.)
         int camx = (int16_t)md.ram16(0xFFFA84);
         int lo = (int16_t)md.ram16(0xFFFAB0), hi = (int16_t)md.ram16(0xFFFAB2);
-        info.mask_left = std::clamp(lo + E - camx, 0, E);
-        info.mask_right = std::clamp(camx + E - hi, 0, E);
+        const int out_l = std::clamp(lo + E - camx, 0, E), out_r = std::clamp(camx + E - hi, 0, E);
+        const int map_w = md.ram16(0xFFFA8E) * 16;
+        const bool past_l = camx - E < 0, past_r = camx + 320 + E > map_w;
+        if ((past_l && past_r) || (past_r && out_l < out_r) || (past_l && out_r < out_l)) {
+            info.mask_left = out_l;
+            info.mask_right = out_r;
+        } else {
+            info.dim_left = out_l;
+            info.dim_right = out_r;
+            info.mirror_left = past_l;
+            info.mirror_right = past_r;
+        }
         if (hud_window(md.vdp, 192)) info.mask_lines = 192;
     }
 
