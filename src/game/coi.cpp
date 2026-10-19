@@ -15,10 +15,11 @@ namespace {
 constexpr uint32_t MODE = 0xFFF300;       // main-loop mode (handler index * 2)
 constexpr uint32_t PAD_HELD = 0xFFF308;
 constexpr uint32_t LEVEL = 0xFFFF42;
+constexpr uint32_t ROUND = 0xFFFF44;
 constexpr uint32_t ITEMS = 0xFFF320;
 constexpr uint32_t HUD_DIRTY = 0xFFF409;  // bit2: redraw items
 constexpr uint32_t HUD_ITEMS = 0xFFF238;  // two HUD digit tiles for ITEMS
-constexpr uint16_t M_OPTIONS = 0x0A, M_LEVEL_INIT = 0x0C, M_GAMEPLAY = 0x0E, M_WARP = 0x10;
+constexpr uint16_t M_OPTIONS = 0x0A, M_LEVEL_INIT = 0x0C, M_GAMEPLAY = 0x0E, M_WARP = 0x10, M_HALLWAY = 0x22;
 // Z80 sound driver request slots
 constexpr uint16_t Z_MUSIC = 0x1C0C, Z_SFX = 0x1C0A, Z_SFX2 = 0x1C0B;
 
@@ -359,9 +360,42 @@ int prop_copy(void* host, int index, uint16_t attr, int x, int y) {
     return 0;
 }
 
+// Round 6's walk outside the castle (drawn by the hallway mode, $7ADF4: plane A block definitions based at $A170)
+// is a single 512-px picture - the castle, a gap with the landscape (plane B), the tower - that the camera pans
+// across (X 0..192): the 4:3 view starts at the castle's left end and stops at the tower's right edge. A wider
+// view past either end would show plane A wrapping round (the tower again left of the castle, the castle again
+// right of the tower): there plane A is left out, and the landscape carries on behind. Plane B (half speed, X 0..96)
+// doesn't join up where it wraps: past that its line is mirrored (only the last 12 px at 21:9 show it).
+void castle_outside_line(const MegaDrive& md, int line, uint8_t* plane_a, uint8_t* plane_b) {
+    if (md.ram16(ROUND) != 5 || md.ram16(0xFF0000) != 0xA170) return;
+    const VDP& v = md.vdp;
+    const int E = v.ext, TW = 320 + 2 * E;
+    const uint32_t hsb = (v.reg[13] & 0x3F) << 10;
+    int hoff;
+    switch (v.reg[11] & 3) {
+    case 0: hoff = 0; break;
+    case 1: hoff = (line & 7) * 4; break;
+    case 2: hoff = (line & ~7) * 4; break;
+    default: hoff = line * 4; break;
+    }
+    const int camx = -(v.vram16(hsb + hoff) & 0x3FF) & 0x1FF;   // plane x at view x 0 (the camera: 0..192)
+    for (int i = 0; i < E - camx && i < TW; i++) plane_a[i] = 0;
+    for (int i = std::max(0, 512 - camx + E); i < TW; i++) plane_a[i] = 0;
+    const int camb = -(v.vram16(hsb + hoff + 2) & 0x3FF) & 0x1FF;
+    for (int i = E - camb - 1; i >= 0; i--) {                    // plane x -1, -2, ... = 0, 1, ...
+        const int src = 2 * (E - camb) - 1 - i;
+        if (src < TW) plane_b[i] = plane_b[src];
+    }
+    for (int i = std::max(0, 512 - camb + E); i < TW; i++) {     // plane x 512, 513, ... = 511, 510, ...
+        const int src = 2 * (512 - camb + E) - 1 - i;
+        if (src >= 0) plane_b[i] = plane_b[src];
+    }
+}
+
 void line_hook(void* host, int line, uint8_t* plane_a, uint8_t* plane_b, uint8_t* sprites) {
     (void)sprites;
     MegaDrive& md = *(MegaDrive*)host;
+    if (md.ram16(MODE) == M_HALLWAY) { castle_outside_line(md, line, plane_a, plane_b); return; }
     if (!wide_gameplay(md)) return;
     if (md.vdp.ext > 64 && !hud_window(md.vdp, line)) {
         draw_far_columns(md, line, plane_a, false);
@@ -433,6 +467,10 @@ public:
         const int E = cfg.ext;
         info.gameplay = wide_gameplay(md);
         if (md.module_state[0] && md.ram16(MODE) == M_GAMEPLAY && sync_camera_bounds(md, E)) md.module_state[0] = 0;
+        // The castle hallway walk (and round 6's castle outside) is shown wide too: its init draws both 512x512
+        // planes whole from a map that wraps seamlessly, the camera only scrolls, and the text banner's rows run
+        // the full plane width - every column is real scenery. Nothing to mask.
+        if (md.ram16(MODE) == M_HALLWAY) { info.gameplay = true; return; }
         if (!info.gameplay || E == 0) return;
         // What the (clamped) camera shows outside the original level bounds - only in the narrow boss arenas, whose
         // camera is locked: Mickey can't go there, so it is shown dimmed. The arenas sit at their map's right end

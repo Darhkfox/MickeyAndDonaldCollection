@@ -263,7 +263,8 @@
                          Castle of Illusion and QuackShot go up to 21:9,
                          World of Illusion up to 2:1 (set wider from another
                          game, it uses 2:1). Title screens, menus, maps and
-                         cut-scenes stay 4:3.            (default: 16:9)
+                         cut-scenes stay 4:3 (Castle of Illusion's castle
+                         hallway is shown wide).         (default: 16:9)
      Re-anchor HUD ..... In widescreen, moves the status bar items out to
                          the screen edges.               (default: ON)
      Pixel Aspect ...... Square pixels, CRT (4:3 pixels) or Stretch to
@@ -470,7 +471,8 @@
 
      Castle of Illusion's boss fights keep the game's locked 4:3 camera, so
      they play exactly as the original; the rest of the room is shown dimmed
-     at the sides (Mickey can't go there).
+     at the sides (Mickey can't go there). Mickey's walk down the castle
+     hallway between rounds is shown in widescreen too.
 
      A few things are worth knowing:
        - Some enemies only wake up once they reach the original 4:3 screen

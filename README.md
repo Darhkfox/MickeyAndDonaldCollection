@@ -70,7 +70,8 @@ that fits the screen (2:1 on most phones).
   keep the game's locked 4:3 camera, so they play exactly as the original, with the room's scenery shown
   dimmed at the sides (out of Mickey's reach).
 - The status bar / HUD is re-anchored to the screen edges (can be switched off).
-- Title screens, menus, maps and cut-scenes stay 4:3 automatically.
+- Title screens, menus, maps and cut-scenes stay 4:3 automatically. Castle of Illusion's walk down the castle
+  hallway to each round's door is shown wide too.
 - The width (and cheats) can be changed at any time, also mid-level: the patches are swapped at the next
   frame where the CPU isn't inside code that changes, and save states remember the width they were made at.
 
@@ -244,7 +245,10 @@ A log line every 5 seconds gives the frame rate and the work per frame (`adb log
 - **Castle of Illusion.** Tile streaming already keeps the whole 512×512 plane valid, so it needs no patch;
   sprites, objects, animated blocks and the camera clamp do. Widescreen applies in the gameplay states
   (`$F300` = `$0E` / `$10`); the HUD lines 192–223 are remapped. Boss arenas keep the game's locked camera;
-  the scenery beside them is dimmed, and a side past the end of the map mirrors the other side.
+  the scenery beside them is dimmed, and a side past the end of the map mirrors the other side. The castle
+  hallway (`$22`) is wide as well: its init draws both 512×512 planes whole from a map that wraps seamlessly,
+  and the camera only scrolls. Round 6's walk outside the castle (same mode) is one 512-pixel picture the camera
+  pans across, so past its ends plane A is left out and the landscape on plane B carries on.
 - **QuackShot.** Objects are spawned from a grid of 128-pixel columns as the camera crosses them
   (`$19C08`). From 2:1 a second, farther column is processed each frame; entries placed to appear behind
   the player (swoop-in birds and others, 41 of 1,036) are held back until the camera reaches the spot they
