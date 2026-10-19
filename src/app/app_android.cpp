@@ -85,6 +85,7 @@ int App::run() {
     touch_.visible = settings_.touch_mode != 2;
 
     find_game_roms();
+    scan_soundtracks();
     apply_settings();
     ach_startup();
     for (int g = 0; g < kGameCount; g++)
@@ -203,6 +204,43 @@ void App::poll_pick() {
             added++;
         }
     if (!added) menu_.toast(r == 1 ? "That file isn't one of the ROMs - see the game cards" : "No new ROMs in those files - see the game cards");
+}
+
+void App::pick_soundtrack() {
+    picking_soundtrack_ = true;
+    soundtrack_note_at_ = 0;
+    call_activity_void("pickSoundtrack");
+}
+
+// The folder is copied on a background thread (a pack is a few hundred MB): progress now and then, then the
+// pack it brought, if any.
+void App::poll_soundtrack() {
+    const jint r = call_activity_int("pollSoundtrackResult");
+    if (r < 0) {
+        const jint pct = call_activity_int("soundtrackProgress");
+        if (pct >= 0 && time_ >= soundtrack_note_at_) {
+            menu_.toast("Copying the soundtrack\xE2\x80\xA6 " + std::to_string(pct) + "%", 1.6f);
+            soundtrack_note_at_ = time_ + 1.5;
+        }
+        return;
+    }
+    picking_soundtrack_ = false;
+    if (r == 2) { menu_.toast("Not enough free space for that soundtrack", 4.0f); return; }
+    if (r != 1) return;
+    const std::vector<SoundtrackPack> before = soundtracks_;
+    scan_soundtracks();
+    const SoundtrackPack* added = nullptr;
+    for (const SoundtrackPack& p : soundtracks_) {
+        bool old = false;
+        for (const SoundtrackPack& q : before) old = old || q.dir == p.dir;
+        if (!old) added = &p;
+    }
+    if (!added) { menu_.toast("No MD+ soundtrack in that folder (a .cue sheet and a .bps patch)", 4.0f); return; }
+    std::string game = added->game_id;
+    for (auto& g : games_) if (added->game_id == g.module->id()) game = g.module->title();
+    menu_.toast("Soundtrack added for " + game + ": choose it under Soundtracks", 4.0f);
+    if (MenuPage* top = menu_.top())
+        if (top->title == "Audio") { menu_.pop(); menu_.push(audio_page()); }   // show it at once
 }
 
 // Android has one full-screen window at the display's own rate.

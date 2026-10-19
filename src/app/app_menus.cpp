@@ -56,9 +56,7 @@ void App::open_pause_menu() {
     p.items.push_back(MenuItem::header("System"));
     p.items.push_back(MenuItem::action("Reset Game", [this]() {
         menu_.confirm("Reset the game?", [this]() {
-            session_->power_on();
-            rewind_.clear();
-            ach_new_run(settings_.achievements);
+            reset_game();
             menu_.close();
         }, "Unsaved progress will be lost.");
     }));
@@ -245,6 +243,43 @@ MenuPage App::audio_page() {
     p.items.push_back(MenuItem::toggle("FM Chip Distortion", [this]() { return settings_.ladder_effect; },
                                        [this, changed](bool v) { settings_.ladder_effect = v; changed(); },
                                        "The YM2612 'ladder effect' heard on original Model 1 consoles."));
+    // MD+ soundtracks found in the soundtracks folder: per game (in a game, only its own)
+    scan_soundtracks();
+    const bool in_game = mode_ == Mode::Playing && session_;
+    bool any = false;
+    for (int g = 0; g < kGameCount; g++) {
+        if (in_game && g != current_) continue;
+        const std::string id = games_[g].module->id();
+        std::vector<std::string> labels = {"Original"}, names = {""};
+        for (const SoundtrackPack& pk : soundtracks_)
+            if (pk.game_id == id) {
+                const std::string l = soundtrack_label(pk.name);
+                labels.push_back(l.find("MD+") == std::string::npos ? "MD+ " + l : l);
+                names.push_back(pk.name);
+            }
+        if (names.size() < 2) continue;
+        if (!any) p.items.push_back(MenuItem::header("Soundtracks"));
+        any = true;
+        p.items.push_back(MenuItem::choice(in_game ? std::string("Soundtrack") : std::string(games_[g].module->title()), labels,
+            [this, id, names]() {
+                auto it = settings_.soundtrack.find(id);
+                for (size_t i = 1; it != settings_.soundtrack.end() && i < names.size(); i++) if (names[i] == it->second) return (int)i;
+                return 0;
+            },
+            [this, id, names, in_game](int v) {
+                settings_.soundtrack[id] = names[v];
+                if (in_game) menu_.toast("The soundtrack changes at the next Reset Game", 3.0f);
+            },
+            "CD-quality music from an MD+ pack in the soundtracks folder. Starts with the game (or Reset Game)."));
+    }
+    if (any)
+        p.items.push_back(MenuItem::slider("Soundtrack Volume", 0, 100, 5, [this]() { return settings_.soundtrack_volume; },
+                                           [this, changed](int v) { settings_.soundtrack_volume = v; changed(); }, pct));
+#ifdef __ANDROID__
+    if (!any) p.items.push_back(MenuItem::header("Soundtracks"));
+    p.items.push_back(MenuItem::action("Add Soundtrack\xE2\x80\xA6", [this]() { pick_soundtrack(); },
+                                       "Pick an MD+ pack's folder (a .cue sheet, a .bps patch and the music): it is copied in."));
+#endif
     p.on_back = [this]() { save_settings(); };
     return p;
 }

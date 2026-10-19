@@ -81,6 +81,7 @@ int App::run(HINSTANCE inst, int show) {
     input_.init(hwnd_);
 
     find_game_roms();
+    scan_soundtracks();
     apply_settings();
     ach_startup();
     if (settings_.fullscreen) set_fullscreen(true);

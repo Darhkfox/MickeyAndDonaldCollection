@@ -45,6 +45,8 @@ struct Settings {
     // Audio
     int         volume = 80;                // 0..100
     int         music_volume = 100;         // FM/PSG balance handled by chip gains
+    int         soundtrack_volume = 70;     // MD+ soundtracks, relative to Volume
+    std::map<std::string, std::string> soundtrack;   // game id -> soundtrack pack (folder name); none = the original
     AudioFilter audio_filter = AudioFilter::Model1;
     bool        ladder_effect = true;
 

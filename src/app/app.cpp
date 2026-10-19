@@ -182,6 +182,7 @@ void App::frame(double dt) {
     menu_.touch_ui = jukebox_.touch_ui = touch_active_;
     if (touch_active_) menu_.footer = "Tap an item to choose    Drag to scroll    Back to return";
     if (picking_roms_) poll_pick();
+    if (picking_soundtrack_) poll_soundtrack();
 #endif
     // With achievements on, rewind and fast forward are off; using them says so (now and then).
     if (ach_locked_note_ > 0) ach_locked_note_ -= (float)dt;
@@ -516,6 +517,28 @@ void App::poll_roms(double dt) {
         if (!was[i] && games_[i].rom.found) menu_.toast(std::string(games_[i].module->title()) + " ROM found");
 }
 
+void App::scan_soundtracks() {
+    std::vector<std::pair<std::string, uint32_t>> ids;
+    for (auto& g : games_) ids.push_back({g.module->id(), g.module->rom_crc32()});
+    soundtracks_ = find_soundtracks(ids);
+}
+
+const SoundtrackPack* App::soundtrack_for(int g) {
+    auto it = settings_.soundtrack.find(games_[g].module->id());
+    if (it == settings_.soundtrack.end() || it->second.empty()) return nullptr;
+    for (const SoundtrackPack& p : soundtracks_)
+        if (p.game_id == it->first && p.name == it->second) return &p;
+    return nullptr;
+}
+
+void App::reset_game() {
+    const SoundtrackPack* p = soundtrack_for(current_);
+    if ((p ? p->name : std::string()) != playing_soundtrack_) { launch(current_); return; }   // the ROM changes too
+    session_->power_on();
+    rewind_.clear();
+    ach_new_run(settings_.achievements);
+}
+
 void App::launch(int g) {
     if (!games_[g].rom.found) {
         menu_.toast(games_[g].rom.other_file.empty() ? "ROM not found - see the game card for details"
@@ -525,7 +548,23 @@ void App::launch(int g) {
     session_ = std::make_unique<Session>();
     rewind_.clear();
     session_->set_audio_rate(48000);
-    session_->open(games_[g].module.get(), games_[g].rom.data);
+    // An MD+ soundtrack: the game runs the pack's patched ROM (in memory) and the pack plays the music it asks for.
+    scan_soundtracks();
+    const SoundtrackPack* pack = soundtrack_for(g);
+    std::vector<uint8_t> patched;
+    std::string err;
+    if (pack && !apply_rom_patch(games_[g].rom.data, pack->patch, patched, err)) {
+        menu_.toast("Soundtrack not used: " + err, 4.0f);
+        pack = nullptr;
+    }
+    session_->open(games_[g].module.get(), pack ? patched : games_[g].rom.data);
+    if (pack && !session_->attach_soundtrack(*pack, err)) {
+        menu_.toast("Soundtrack not used: " + err, 4.0f);
+        session_->open(games_[g].module.get(), games_[g].rom.data);
+        pack = nullptr;
+    }
+    playing_soundtrack_ = pack ? pack->name : "";
+    if (pack) menu_.toast("\xE2\x99\xAA  MD+ soundtrack: " + soundtrack_label(pack->name), 3.0f);
     session_->apply_settings(settings_);
     session_->power_on();
     ach_new_run(settings_.achievements);

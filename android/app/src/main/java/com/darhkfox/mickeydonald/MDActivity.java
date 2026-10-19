@@ -10,6 +10,7 @@ import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Build;
+import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -27,6 +28,7 @@ import org.libsdl.app.SDLActivity;
  */
 public class MDActivity extends SDLActivity {
     private static final int PICK_ROMS = 0x4D44;
+    private static final int PICK_SOUNDTRACK = 0x4D45;
     private static final long MAX_FILE = 64L << 20;
     // set when the picker returns: the number of files copied (-1 while the picker is open / nothing yet)
     private static volatile int pickResult = -1;
@@ -96,6 +98,15 @@ public class MDActivity extends SDLActivity {
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == PICK_SOUNDTRACK) {
+            if (resultCode != RESULT_OK || data == null || data.getData() == null) { soundtrackResult = 0; return; }
+            final Uri tree = data.getData();
+            new Thread(new Runnable() {
+                @Override
+                public void run() { copySoundtrack(tree); }
+            }).start();
+            return;
+        }
         if (requestCode != PICK_ROMS) {
             super.onActivityResult(requestCode, resultCode, data);
             return;
@@ -111,6 +122,122 @@ public class MDActivity extends SDLActivity {
             for (Uri u : uris) if (copyIn(u, dir)) copied++;
         }
         pickResult = copied;
+    }
+
+    // ---- soundtrack picker (called from native code, app_android.cpp) ---------------------------------
+    // An MD+ pack is a folder (a .cue, a .bps / .ips patch and the music, ~400 MB): the player picks the folder and
+    // it is copied, on a background thread, to files/soundtracks/<folder name>, where the soundtrack search looks.
+    // Result: -1 picker open / copying, 0 cancelled or failed, 1 copied, 2 not enough free space.
+    private static volatile int soundtrackResult = -1;
+    private static volatile long soundtrackDone = 0, soundtrackTotal = 0;
+    private static volatile String soundtrackName = "";
+
+    public static void pickSoundtrack() {
+        soundtrackResult = -1;
+        soundtrackDone = soundtrackTotal = 0;
+        final SDLActivity act = mSingleton;
+        act.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    act.startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), PICK_SOUNDTRACK);
+                } catch (Exception e) {
+                    soundtrackResult = 0;
+                }
+            }
+        });
+    }
+
+    public static int pollSoundtrackResult() {
+        int r = soundtrackResult;
+        if (r >= 0) soundtrackResult = -1;
+        return r;
+    }
+
+    // percent copied, or -1 before the copy starts
+    public static int soundtrackProgress() {
+        long t = soundtrackTotal;
+        return t > 0 ? (int)(soundtrackDone * 100 / t) : -1;
+    }
+
+    public static String soundtrackFolder() { return soundtrackName; }
+
+    private static class Doc {
+        String id, name;
+        long size;
+        boolean dir;
+    }
+
+    private List<Doc> children(Uri tree, String parentId) {
+        List<Doc> out = new ArrayList<>();
+        Uri kids = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId);
+        String[] cols = { DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                          DocumentsContract.Document.COLUMN_MIME_TYPE, DocumentsContract.Document.COLUMN_SIZE };
+        try (Cursor c = getContentResolver().query(kids, cols, null, null, null)) {
+            while (c != null && c.moveToNext()) {
+                Doc d = new Doc();
+                d.id = c.getString(0);
+                d.name = c.getString(1).replace('/', '_').replace('\\', '_');
+                d.dir = DocumentsContract.Document.MIME_TYPE_DIR.equals(c.getString(2));
+                d.size = c.isNull(3) ? 0 : c.getLong(3);
+                out.add(d);
+            }
+        } catch (Exception e) {
+            out.clear();
+        }
+        return out;
+    }
+
+    private static boolean wanted(String name) {
+        String n = name.toLowerCase();
+        return n.endsWith(".cue") || n.endsWith(".bps") || n.endsWith(".ips") || n.endsWith(".wav") || n.endsWith(".bin")
+            || n.endsWith(".txt");
+    }
+
+    private void copySoundtrack(Uri tree) {
+        String rootId = DocumentsContract.getTreeDocumentId(tree);
+        String rootName = "soundtrack";
+        try (Cursor c = getContentResolver().query(DocumentsContract.buildDocumentUriUsingTree(tree, rootId),
+                new String[] { DocumentsContract.Document.COLUMN_DISPLAY_NAME }, null, null, null)) {
+            if (c != null && c.moveToFirst()) rootName = c.getString(0).replace('/', '_').replace('\\', '_');
+        } catch (Exception e) {
+            rootName = "soundtrack";
+        }
+        soundtrackName = rootName;
+        // the folder and the folders in it (a download that wraps the pack in one more folder)
+        List<String[]> files = new ArrayList<>();      // { document id, relative path }
+        long total = 0;
+        for (Doc d : children(tree, rootId)) {
+            if (d.dir) {
+                for (Doc e : children(tree, d.id))
+                    if (!e.dir && wanted(e.name)) { files.add(new String[] { e.id, d.name + "/" + e.name }); total += e.size; }
+            } else if (wanted(d.name)) {
+                files.add(new String[] { d.id, d.name });
+                total += d.size;
+            }
+        }
+        File base = new File(new File(getFilesDir(), "soundtracks"), rootName);
+        if (files.isEmpty()) { soundtrackResult = 0; return; }
+        if (getFilesDir().getUsableSpace() < total + (64L << 20)) { soundtrackResult = 2; return; }
+        soundtrackTotal = Math.max(1, total);
+        byte[] buf = new byte[1 << 20];
+        try {
+            for (String[] f : files) {
+                File out = new File(base, f[1]);
+                out.getParentFile().mkdirs();
+                File tmp = new File(out.getPath() + ".tmp");
+                try (InputStream in = getContentResolver().openInputStream(DocumentsContract.buildDocumentUriUsingTree(tree, f[0]));
+                     OutputStream os = new FileOutputStream(tmp)) {
+                    int n;
+                    while ((n = in.read(buf)) > 0) { os.write(buf, 0, n); soundtrackDone += n; }
+                }
+                out.delete();
+                if (!tmp.renameTo(out)) throw new Exception("rename");
+            }
+            soundtrackResult = 1;
+        } catch (Exception e) {
+            soundtrackResult = 0;
+        }
     }
 
     // ---- UI font glyphs (called from native code, video_gles.cpp) ------------------------------------

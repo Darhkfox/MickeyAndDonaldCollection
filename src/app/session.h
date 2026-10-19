@@ -8,6 +8,7 @@
 #include "../game/game.h"
 #include "settings.h"
 #include "audio_mixer.h"
+#include "soundtrack.h"
 
 class Session {
 public:
@@ -15,6 +16,9 @@ public:
     ~Session();
 
     bool open(GameModule* module, const std::vector<uint8_t>& rom);
+    // An MD+ soundtrack for the game (open() was given the ROM with the pack's patch applied).
+    bool attach_soundtrack(const SoundtrackPack& pack, std::string& error);
+    bool has_soundtrack() const { return mdplus_ != nullptr; }
     GameModule* module() const { return module_; }
     MegaDrive& md() { return *md_; }
 
@@ -54,6 +58,8 @@ private:
     uint32_t lut_[2048];
     std::vector<uint32_t> pixels_;
     AudioMixer mixer_;
+    std::unique_ptr<MdPlus> mdplus_;
+    float soundtrack_gain_ = 0.7f;
     double out_rate_ = 48000.0;
     float  mask_l_ = 0, mask_r_ = 0;     // animated masks (pixels)
     int    mask_lines_ = 0;

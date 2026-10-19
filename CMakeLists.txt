@@ -39,6 +39,7 @@ add_executable(DisneyClassics WIN32
     src/app/launcher.cpp
     src/app/jukebox.cpp
     src/app/session.cpp
+    src/app/soundtrack.cpp
     src/app/settings.cpp
     src/app/palette.cpp
     src/app/audio_mixer.cpp

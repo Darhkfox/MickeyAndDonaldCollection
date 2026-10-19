@@ -323,7 +323,7 @@ void MegaDrive::write8(uint32_t a, uint8_t v) {
         if (ram_watch && on_ram_write) on_ram_write(*this, a, v, 1);
         return;
     }
-    if (a < 0x400000) return;
+    if (a < 0x400000) { if (on_cart_write) on_cart_write(*this, a, v, 1); return; }
     if (a >= 0xA00000 && a < 0xA10000) {
         uint32_t z = a & 0x7FFF;
         if (z < 0x4000) zram[z & 0x1FFF] = v;
@@ -359,7 +359,7 @@ void MegaDrive::write16(uint32_t a, uint16_t v) {
         if (ram_watch && on_ram_write) on_ram_write(*this, a, v, 2);
         return;
     }
-    if (a < 0x400000) return;
+    if (a < 0x400000) { if (on_cart_write) on_cart_write(*this, a, v, 2); return; }
     if (a >= 0xA00000 && a < 0xA10000) { write8(a, (uint8_t)(v >> 8)); return; }
     if (a >= 0xA10000 && a < 0xA10020) { io_write(a | 1, (uint8_t)v); return; }
     if (a == 0xA11100) { z80_busreq = (v & 0x100) != 0; return; }

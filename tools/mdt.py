@@ -171,6 +171,19 @@ class MD:
     def rom(self):
         return self._arr(_dll.mdt_rom, _dll.mdt_rom_size(self.h))
 
+    def cart_log_on(self):
+        """start logging 68000 writes to cartridge space (an MD+ patched ROM's commands)"""
+        _dll.mdt_cart_log_on(self.h)
+
+    def cart_log(self):
+        """[(frame, addr, value, size)] logged since the last call"""
+        buf = (C.c_uint32 * (3 * 4096))()
+        out = []
+        while True:
+            n = _dll.mdt_cart_log(self.h, buf, 4096)
+            out += [(buf[i * 3], buf[i * 3 + 1] & 0xFFFFFF, buf[i * 3 + 2], buf[i * 3 + 1] >> 24) for i in range(n)]
+            if n < 4096: return out
+
     def ram8(self, a):
         return self.ram[a & 0xFFFF]
 
@@ -360,6 +373,10 @@ class ModuleMD(MD):
 def ramsearch_snapshot(md):
     return bytes(md.ram)
 
+
+if hasattr(_dll, 'mdt_cart_log_on'):
+    _dll.mdt_cart_log_on.argtypes = [C.c_void_p]
+    _dll.mdt_cart_log.argtypes = [C.c_void_p, C.POINTER(C.c_uint32), C.c_int]
 
 # ---- the port's achievement detectors, run on RAM images (src/game/<game>.cpp achievement_frame) ----
 _HAS_ACH = hasattr(_dll, 'mdt_ach_create')

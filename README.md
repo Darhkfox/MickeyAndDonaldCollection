@@ -89,6 +89,19 @@ that fits the screen (2:1 on most phones).
 **Audio**
 - YM2612 + SN76489 emulation, volume, the Model 1 / Model 2 output filter, the YM2612 "ladder effect".
 
+**CD-quality soundtracks (MD+)**
+- Castle of Illusion and QuackShot can play fan-made MD+ soundtrack packs (made for the MegaSD and Mega
+  EverDrive Pro): a ROM patch, a `.cue` sheet and the music as WAV files. Like the ROMs, packs aren't
+  included: you supply them.
+- Windows: drop the pack's folder, as downloaded, into a `soundtracks` folder next to `DisneyClassics.exe`.
+  Android: *Options → Audio → Add Soundtrack…* and pick the pack's folder (it is copied into the app).
+  The folder's name doesn't matter: the patch says which game it is for.
+- Choose it per game under *Options → Audio → Soundtracks*; it starts with the game (or *Reset Game*). The
+  patch is applied in memory (the ROM file is never changed), the game's sound effects stay the console's,
+  and save states remember the track and where it was. *Soundtrack Volume* sets its level. Widescreen,
+  cheats, achievements and the level select work as usual.
+- MD+ packs only for now (MSU-MD packs talk to a Mega CD instead).
+
 **Music player & sound test**
 - Every music track, sound effect and voice of each game, played by the game's own sound driver, with
   channel meters.
@@ -157,7 +170,7 @@ Steam Input can make one controller appear twice; if one pad moves both players,
 ## Files
 
 Settings are stored in `settings.ini`, earned achievements in `achievements.ini`, save states in `saves\`,
-screenshots in `screenshots\`. These live
+screenshots in `screenshots\`; soundtrack packs go in `soundtracks\`. These live
 next to the exe (the folder is portable), or in `%LOCALAPPDATA%\Mickey and Donald Collection` if that
 folder isn't writable. Delete `settings.ini` to restore the defaults.
 

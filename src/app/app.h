@@ -122,6 +122,10 @@ private:
     uint64_t work_end_ = 0;              // SDL counter when the last frame's drawing was done (perf log)
     void pick_roms();                    // opens Android's file picker; the files are copied into files/roms
     void poll_pick();                    // while the picker is open: notices it closing
+    bool picking_soundtrack_ = false;
+    double soundtrack_note_at_ = 0;      // when the next "copying" message is due
+    void pick_soundtrack();              // Android: picks an MD+ pack's folder; it is copied into files/soundtracks
+    void poll_soundtrack();              // while it is picked / copied: progress, then the pack it found
 #endif
     uint64_t rom_sig_ = 0;
     double rom_poll_ = 0;
@@ -230,6 +234,12 @@ private:
     void launch(int game);
     void find_game_roms();                // searches for the ROMs still missing; opens previews for new ones
     void poll_roms(double dt);            // launcher: notices ROMs added while it is open
+    // MD+ soundtracks (soundtrack.h): the packs found, and the one the running game was started with
+    std::vector<SoundtrackPack> soundtracks_;
+    std::string playing_soundtrack_;
+    void scan_soundtracks();
+    const SoundtrackPack* soundtrack_for(int game);   // the pack the settings choose for a game, if it's there
+    void reset_game();                    // Reset Game: power-on, or a fresh start when the soundtrack changed
     void back_to_launcher();
     void run_game_frames(int count, bool audio);
     void draw_game_view(int slot, Session& s, Rect area, float alpha, float dim);

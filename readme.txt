@@ -297,6 +297,9 @@
                          (bright).                       (default: Model 1)
      FM Chip Distortion  The YM2612 "ladder effect" heard on original
                          Model 1 consoles.               (default: ON)
+     Soundtracks ....... Shown when a soundtrack pack is found: per game,
+                         Original or the MD+ pack (see SOUNDTRACKS below),
+                         and Soundtrack Volume.          (default: 70%)
 
   CONTROLS  (and CONTROLS - PLAYER 2)
      Keyboard keys and gamepad buttons for each Mega Drive button. Highlight
@@ -406,6 +409,30 @@
 
 
 --------------------------------------------------------------------------------
+  SOUNDTRACKS (MD+)
+--------------------------------------------------------------------------------
+
+  Castle of Illusion and QuackShot can play fan-made CD-quality soundtracks:
+  MD+ packs, made for the MegaSD and Mega EverDrive Pro flash carts. A pack
+  is a folder with a ROM patch (.bps or .ips), a .cue sheet and the music as
+  .wav files. Like the ROMs, packs aren't included -- you supply them.
+
+  1. Make a folder called "soundtracks" next to DisneyClassics.exe.
+  2. Drop the pack's folder into it, as downloaded (the name doesn't matter:
+     the patch says which game it is for).
+  3. Options > Audio > Soundtracks: choose the pack for that game.
+
+  It starts when the game starts (or with Reset Game). The patch is applied
+  in memory -- your ROM file is never changed -- and the music plays from
+  the pack while the sound effects stay the console's own. Save states
+  remember the track and where it was. Soundtrack Volume sets its level.
+  Widescreen, cheats, achievements and the level select all work as usual.
+
+  The pack must be made for the same USA ROM the collection uses (the patch
+  checks it). Only MD+ packs are supported for now, not MSU-MD ones.
+
+
+--------------------------------------------------------------------------------
   SAVE STATES, SETTINGS AND SCREENSHOTS
 --------------------------------------------------------------------------------
 
@@ -416,10 +443,10 @@
   Settings are kept in "settings.ini", earned achievements in
   "achievements.ini", save states in a "saves" folder and screenshots in a
   "screenshots" folder, all next to DisneyClassics.exe, so the whole folder
-  is portable. If that folder can't be written to (for
-  example under Program Files) they go to
-  %LOCALAPPDATA%\Mickey and Donald Collection instead. Delete settings.ini
-  to go back to the defaults.
+  is portable (soundtrack packs go in a "soundtracks" folder there too). If
+  that folder can't be written to (for example under Program Files) they go
+  to %LOCALAPPDATA%\Mickey and Donald Collection instead. Delete
+  settings.ini to go back to the defaults.
 
   Save states made by this version may not load in an older one.
 
@@ -477,6 +504,11 @@
   "Direct3D 11 could not be initialised"
      Update your graphics driver. The port needs a DirectX 11 capable GPU
      (anything from the last 10+ years).
+
+  "Soundtrack not used: ..." when a game starts
+     The pack's patch doesn't fit the ROM: it is made for another version of
+     the game (it needs the USA ROM listed at the top), or a file of the
+     pack is missing or damaged. The game plays with its original music.
 
   Black frame insertion flickers or pulses
      Every other refresh has to be black, exactly in step with the display.

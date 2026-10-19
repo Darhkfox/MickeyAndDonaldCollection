@@ -124,6 +124,8 @@ bool Settings::load(const std::wstring& path) {
             else if (k == "music_volume") music_volume = clampi(iv, 0, 100);
             else if (k == "filter") audio_filter = (AudioFilter)clampi(iv, 0, (int)AudioFilter::Count - 1);
             else if (k == "ladder_effect") ladder_effect = iv != 0;
+            else if (k == "soundtrack_volume") soundtrack_volume = clampi(iv, 0, 100);
+            else if (k.rfind("soundtrack_", 0) == 0 && k.size() > 11) soundtrack[k.substr(11)] = v;   // soundtrack_coi=<pack>
         } else if (section == "input1" || section == "input2") {
             int p = section == "input1" ? 0 : 1;
             for (int a = 0; a < ACT_COUNT; a++) {
@@ -156,7 +158,9 @@ bool Settings::save(const std::wstring& path) const {
       << "\nsaturation=" << saturation << "\ngamma=" << gamma << "\nno_sprite_limit=" << no_sprite_limit
       << "\nhud_anchor=" << hud_anchor << "\nshow_fps=" << show_fps << "\nblack_frames=" << black_frames << "\n\n[audio]\n"
       << "volume=" << volume << "\nmusic_volume=" << music_volume << "\nfilter=" << (int)audio_filter
-      << "\nladder_effect=" << ladder_effect << "\n";
+      << "\nladder_effect=" << ladder_effect << "\nsoundtrack_volume=" << soundtrack_volume << "\n";
+    for (const auto& kv : soundtrack)
+        if (!kv.second.empty()) o << "soundtrack_" << kv.first << "=" << kv.second << "\n";
     for (int p = 0; p < 2; p++) {
         o << "\n[input" << (p + 1) << "]\n";
         for (int a = 0; a < ACT_COUNT; a++) o << "key_" << kActionKeys[a] << "=" << keys[p][a] << "\n";

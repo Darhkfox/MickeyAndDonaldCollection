@@ -77,6 +77,9 @@ public:
     // RAM write watch (68000 side): called after every write to main RAM when set.
     std::function<void(MegaDrive&, uint32_t addr, uint32_t value, int size)> on_ram_write;
     void enable_ram_watch(bool on);
+    // Writes to cartridge space ($000000-$3FFFFF): ignored by the ROM, seen by a cartridge device when set
+    // (the MD+ audio overlay at $3F7FA / $3F7FE). size 1 or 2.
+    std::function<void(MegaDrive&, uint32_t addr, uint16_t value, int size)> on_cart_write;
     // Called at the start of each frame / at VBlank (line 224) / end of frame.
     std::function<void(MegaDrive&)> on_frame_start, on_vblank, on_frame_end;
 

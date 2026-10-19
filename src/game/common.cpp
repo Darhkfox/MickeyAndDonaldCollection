@@ -15,8 +15,12 @@ int apply_patches(MegaDrive& md, const std::vector<RomPatch>& patches) {
         applied++;
     }
     if (applied) {
+        // the games' boot test sums $200 up to the ROM end the header gives ($1A4), not the whole ROM: an MD+
+        // patch can append code beyond it
+        uint32_t end = md.rom32(0x1A4) + 1;
+        if (end <= 0x200 || end > md.rom.size()) end = (uint32_t)md.rom.size();
         uint16_t sum = 0;
-        for (uint32_t a = 0x200; a + 1 < md.rom.size(); a += 2) sum = (uint16_t)(sum + md.rom16(a));
+        for (uint32_t a = 0x200; a + 1 < end; a += 2) sum = (uint16_t)(sum + md.rom16(a));
         md.patch_rom16(0x18E, sum);
     }
     return applied;

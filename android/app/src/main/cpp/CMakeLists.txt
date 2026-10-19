@@ -35,6 +35,7 @@ add_library(main SHARED
   ${SRC}/app/launcher.cpp
   ${SRC}/app/jukebox.cpp
   ${SRC}/app/session.cpp
+  ${SRC}/app/soundtrack.cpp
   ${SRC}/app/settings.cpp
   ${SRC}/app/palette.cpp
   ${SRC}/app/audio_mixer.cpp

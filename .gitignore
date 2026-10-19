@@ -69,3 +69,12 @@ android/keystore.properties
 *.keystore
 *.apk
 third_party/SDL2-*-src/
+
+# Soundtrack packs (MD+ / MSU-MD: patches, cue sheets, music): the player supplies them, never committed
+MD+*/
+MSU*/
+soundtracks/
+*.wav
+*.cue
+*.bps
+*.ips

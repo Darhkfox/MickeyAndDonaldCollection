@@ -30,6 +30,7 @@ struct Tool {
     std::unique_ptr<GameModule> module;  // optional game module under test
     GameConfig cfg;
     FrameInfo info;
+    std::vector<uint32_t> cart_log;      // writes to cartridge space: frame << 32 is too wide, so (addr, value) pairs
 };
 
 void build_palette(std::vector<uint32_t>& lut) {
@@ -436,3 +437,19 @@ API void mdt_ach_set_run(void* h, int run_counts, uint32_t run_bits) {   // with
     a->ctx.run_bits = run_bits;
 }
 API void mdt_ach_level_select(void* h) { ((AchTool*)h)->ctx.level_select = true; }   // a level select start just ran
+
+// ---- cartridge-space writes (an MD+ patched ROM's commands): (frame, address, value) triples since the last call
+API void mdt_cart_log_on(void* h) {
+    Tool* t = (Tool*)h;
+    t->cart_log.clear();
+    t->md.on_cart_write = [t](MegaDrive& md, uint32_t a, uint16_t v, int size) {
+        if (t->cart_log.size() < 3 * 100000) { t->cart_log.push_back((uint32_t)md.frame_count); t->cart_log.push_back(a | (size << 24)); t->cart_log.push_back(v); }
+    };
+}
+API int mdt_cart_log(void* h, uint32_t* out, int max_triples) {
+    Tool* t = (Tool*)h;
+    int n = std::min<int>(max_triples, (int)t->cart_log.size() / 3);
+    if (out) memcpy(out, t->cart_log.data(), (size_t)n * 3 * sizeof(uint32_t));
+    t->cart_log.erase(t->cart_log.begin(), t->cart_log.begin() + (size_t)n * 3);
+    return n;
+}

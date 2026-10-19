@@ -11,8 +11,18 @@ Session::~Session() {}
 
 bool Session::open(GameModule* module, const std::vector<uint8_t>& rom) {
     module_ = module;
+    mdplus_.reset();
+    md_->on_cart_write = nullptr;
     if (!md_->load_rom(rom)) return false;
     power_on();
+    return true;
+}
+
+bool Session::attach_soundtrack(const SoundtrackPack& pack, std::string& error) {
+    std::unique_ptr<MdPlus> p(new MdPlus);
+    if (!p->load(pack, error)) return false;
+    mdplus_ = std::move(p);
+    md_->on_cart_write = [this](MegaDrive&, uint32_t a, uint16_t v, int size) { mdplus_->write(a, v, size); };
     return true;
 }
 
@@ -29,6 +39,7 @@ void Session::apply_settings(const Settings& s) {
     want_ = c;
     md_->vdp.sprite_limit = !s.no_sprite_limit;
     md_->ym.ladder_effect = s.ladder_effect;
+    soundtrack_gain_ = s.volume / 100.0f * s.soundtrack_volume / 100.0f;
     mixer_.configure(md_->sample_rate(), out_rate_, s.audio_filter, s.volume / 100.0f * (module_ ? module_->audio_gain() : 1.0f));
     if (!configured_) switch_config();
     else try_switch();
@@ -54,6 +65,7 @@ void Session::try_switch() {
 void Session::power_on() {
     md_->power_on();
     mixer_.reset();
+    if (mdplus_) mdplus_->stop();
     if (configured_) switch_config();          // the CPU starts from its reset vector: nothing to wait for
     mask_l_ = mask_r_ = (float)cfg_.ext;
 }
@@ -67,6 +79,7 @@ bool Session::start_level(int index, int variant) {
     bool ok = module_->start_level(*md_, want_, index, variant);   // starts from power-on
     switch_config();
     mixer_.reset();
+    if (mdplus_) mdplus_->stop();
     return ok;
 }
 
@@ -129,19 +142,25 @@ void Session::set_audio_rate(double out_rate) {
 
 void Session::mix_audio(std::vector<int16_t>& out, double adjust) {
     if (muted) return;
+    const size_t before = out.size();
     mixer_.process(md_->audio.data(), md_->audio_frames, adjust, out);
+    // the soundtrack plays in real time against the output: as many frames as the game's sound just took
+    if (mdplus_ && out.size() > before)
+        mdplus_->mix(&out[before], (int)((out.size() - before) / 2), out_rate_, soundtrack_gain_);
 }
 
 std::vector<uint8_t> Session::save_state(const std::string& extra) {
     std::vector<uint8_t> s = md_->save_state();
     // Append a tag: the module id (states from another game are rejected) and the configuration the ROM ran
     // with ("qs|108|cheat,cheat"), so a load can restore exactly that ROM before moving to the current settings;
-    // then the app's note, if any ("|a1.00000000").
+    // then the app's note, if any ("|a1.00000000"), and what the soundtrack plays, if any ("|t12,34567,1,255").
+    const std::string cd = mdplus_ ? mdplus_->state() : std::string();
     std::string tag = module_ ? module_->id() : "";
     tag += "|" + std::to_string(cfg_.ext) + "|";
     for (const auto& kv : cfg_.cheats)
-        if (kv.second && tag.size() + kv.first.size() + extra.size() < 240) tag += kv.first + ",";
-    if (!extra.empty()) tag += "|" + extra;
+        if (kv.second && tag.size() + kv.first.size() + extra.size() + cd.size() < 236) tag += kv.first + ",";
+    if (!cd.empty()) tag += "|" + extra + "|" + cd;
+    else if (!extra.empty()) tag += "|" + extra;
     s.insert(s.end(), tag.begin(), tag.end());
     s.push_back((uint8_t)tag.size());
     return s;
@@ -165,7 +184,9 @@ bool Session::load_state(const std::vector<uint8_t>& data, std::string* extra) {
         saved.ext = std::clamp(atoi(tag.c_str() + bar + 1), 0, module_->max_ext());
         saved.cheats.clear();
         std::string list = bar2 == std::string::npos ? "" : tag.substr(bar2 + 1, bar3 == std::string::npos ? std::string::npos : bar3 - bar2 - 1);
-        if (extra) *extra = bar3 == std::string::npos ? "" : tag.substr(bar3 + 1);
+        const size_t bar4 = bar3 == std::string::npos ? std::string::npos : tag.find('|', bar3 + 1);
+        if (extra) *extra = bar3 == std::string::npos ? "" : tag.substr(bar3 + 1, bar4 == std::string::npos ? std::string::npos : bar4 - bar3 - 1);
+        if (mdplus_) mdplus_->set_state(bar4 == std::string::npos ? "" : tag.substr(bar4 + 1));
         for (size_t a = 0; a < list.size();) {
             size_t b = list.find(',', a);
             if (b == std::string::npos) b = list.size();
