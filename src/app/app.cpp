@@ -147,6 +147,17 @@ void App::bind_hotkey_pad(int h, uint32_t button) {
     settings_.hotkey_pads[h] = button;
 }
 
+std::string App::hotkey_text(int h) const {
+    const uint32_t b = settings_.hotkey_pads[h];
+    const std::string pad = b ? Input::pad_button_name(b) : std::string();
+#ifdef _WIN32
+    const int vk = settings_.hotkey_keys[h];
+    return (vk ? Input::key_name(vk) : std::string("-")) + " / " + (pad.empty() ? std::string("-") : pad);
+#else
+    return pad;
+#endif
+}
+
 bool App::hold_hotkey(int vk, uint32_t pad_button) {
     bool key_free = true, pad_free = true;
     for (int p = 0; p < 2; p++)

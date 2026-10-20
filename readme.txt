@@ -314,10 +314,10 @@
 
   CONTROLS  (and CONTROLS - PLAYER 2)
      Keyboard keys and gamepad buttons for each Mega Drive button, and (on
-     Player 1's page) for Fast Forward and Rewind. Highlight one, press
-     Enter, then the new key or button (one already in use swaps; Esc
-     cancels). Also: Device (which pad), Left Stick Moves (default ON) and
-     Reset to Defaults.
+     Player 1's page) for Fast Forward and Rewind (greyed out while
+     achievements are on). Highlight one, press Enter, then the new key or
+     button (one already in use swaps; Esc cancels). Also: Device (which
+     pad), Left Stick Moves (default ON) and Reset to Defaults.
 
   ACHIEVEMENTS
      Achievements ...... Earn achievements as you play. While this is on,
@@ -327,8 +327,10 @@
 
   SPEED
      Fast Forward ...... Hold Tab or the right trigger for 4x speed (the
-                         key and button can be changed under Controls).
-                         Only while achievements are off. (default: ON)
+                         key and button can be changed under Controls;
+                         the row shows them). Only while achievements are
+                         off: with them on it shows "Off (achievements
+                         on)".                           (default: ON)
      Rewind ............ Hold R or the left trigger to step back through the
                          last minute of play (changeable under Controls
                          too). Only while achievements are off.

@@ -84,15 +84,18 @@ void App::open_options_menu(bool from_launcher) {
                                            [this]() { menu_.push(controls_page(1)); },
                                            "Second player's keys and gamepad (World of Illusion is the only 2-player game)."));
     p.items.push_back(MenuItem::header("Speed"));
+    // (beside each switch: what to hold, or why it is off)
     MenuItem ff = MenuItem::toggle("Fast Forward", [this]() { return settings_.fast_forward && !settings_.achievements; },
                                    [this](bool v) { settings_.fast_forward = v; },
-                                   "Hold the fast forward key or button (Tab / RT unless changed under Controls) for 4x speed.");
+                                   "Hold the fast forward key or button for 4x speed (they can be changed under Controls).");
     ff.enabled = [this]() { return !settings_.achievements; };
+    ff.value_text = [this]() { return settings_.achievements ? std::string("Off (achievements on)") : hotkey_text(HK_FAST_FORWARD); };
     p.items.push_back(ff);
     MenuItem rw = MenuItem::toggle("Rewind", [this]() { return settings_.rewind && !settings_.achievements; },
                                    [this](bool v) { settings_.rewind = v; if (!v) rewind_.clear(); },
-                                   "Hold the rewind key or button (R / LT unless changed under Controls) to step back up to a minute.");
+                                   "Hold the rewind key or button to step back up to a minute (they can be changed under Controls).");
     rw.enabled = [this]() { return !settings_.achievements; };
+    rw.value_text = [this]() { return settings_.achievements ? std::string("Off (achievements on)") : hotkey_text(HK_REWIND); };
     p.items.push_back(rw);
     // (right under what it switches off)
     p.items.push_back(MenuItem::header("Achievements"));
@@ -110,12 +113,6 @@ void App::open_options_menu(bool from_launcher) {
     p.items.push_back(MenuItem::info("Menu", []() { return std::string("Esc / (Back)"); }));
     p.items.push_back(MenuItem::info("Fullscreen", []() { return std::string("F11 / Alt+Enter"); }));
     p.items.push_back(MenuItem::info("Quick save / load", []() { return std::string("F5 / F9"); }));
-    for (int h = 0; h < HK_COUNT; h++)
-        p.items.push_back(MenuItem::info(h == HK_FAST_FORWARD ? "Fast forward (hold)" : "Rewind (hold)", [this, h]() {
-            const int vk = settings_.hotkey_keys[h];
-            const uint32_t b = settings_.hotkey_pads[h];
-            return (vk ? Input::key_name(vk) : std::string("-")) + " / " + (b ? Input::pad_button_name(b) : std::string("-"));
-        }));
     p.items.push_back(MenuItem::info("Screenshot", []() { return std::string("F12"); }));
 #endif
     p.on_back = [this]() { save_settings(); };
@@ -317,7 +314,12 @@ MenuPage App::controls_page(int player) {
             MenuItem it;
             it.kind = MenuItem::Bind;
             it.label = kHotkeyNames[h];
-            it.value_text = [this, h]() { int vk = settings_.hotkey_keys[h]; return vk ? Input::key_name(vk) : std::string("-"); };
+            it.value_text = [this, h]() {
+                if (settings_.achievements) return std::string("Off (achievements on)");
+                int vk = settings_.hotkey_keys[h];
+                return vk ? Input::key_name(vk) : std::string("-");
+            };
+            it.enabled = [this]() { return !settings_.achievements; };
             it.on_bind = [this, h](int vk, uint32_t) { bind_hotkey_key(h, vk); };
             it.hint = "Press Enter, then the new key (a key already in use swaps). Esc cancels.";
             p.items.push_back(it);
@@ -357,7 +359,12 @@ MenuPage App::controls_page(int player) {
             it.kind = MenuItem::Bind;
             it.bind_pad = true;
             it.label = kHotkeyNames[h];
-            it.value_text = [this, h]() { uint32_t b = settings_.hotkey_pads[h]; return b ? Input::pad_button_name(b) : std::string("-"); };
+            it.value_text = [this, h]() {
+                if (settings_.achievements) return std::string("Off (achievements on)");
+                uint32_t b = settings_.hotkey_pads[h];
+                return b ? Input::pad_button_name(b) : std::string("-");
+            };
+            it.enabled = [this]() { return !settings_.achievements; };
             it.on_bind = [this, h](int, uint32_t b) { bind_hotkey_pad(h, b); };
             it.hint = "Press Enter / (A), then the new pad button. Esc cancels.";
             p.items.push_back(it);
