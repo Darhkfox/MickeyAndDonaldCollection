@@ -454,20 +454,59 @@ void storm_room_line(const MegaDrive& md, int line, uint8_t* plane_a) {
     }
 }
 
+// What the widened view shows outside the original level bounds - only in the narrow boss arenas, whose camera is
+// locked: Mickey can't go there, so it is shown dimmed (the renderer leaves sprites bright). The arenas sit at their
+// map's right end (the 4:3 camera already reached it): past it there are no tiles of the level, so that side's
+// planes mirror the other side's (arena_mirror_line). Past both ends: black. The Storm's boss room carries its own
+// pattern on instead (storm_room_line).
+struct ArenaStrips {
+    int left = 0, right = 0;            // extension columns outside the play area, from each edge
+    bool mask = false;                  // black them out (else dim)
+    bool mirror_left = false, mirror_right = false;
+};
+
+ArenaStrips arena_strips(const MegaDrive& md, int E) {
+    ArenaStrips s;
+    const int camx = (int16_t)md.ram16(0xFFFA84);
+    int lo = (int16_t)md.ram16(0xFFFAB0), hi = (int16_t)md.ram16(0xFFFAB2);
+    const bool storm = md.ram16(LEVEL) == 0x0C;
+    if (storm) arena_bounds(md, lo, hi);
+    s.left = std::clamp(lo + E - camx, 0, E);
+    s.right = std::clamp(camx + E - hi, 0, E);
+    const int map_w = md.ram16(0xFFFA8E) * 16;
+    const bool past_l = camx - E < 0, past_r = camx + 320 + E > map_w;
+    if (storm) return s;
+    if ((past_l && past_r) || (past_r && s.left < s.right) || (past_l && s.right < s.left)) s.mask = true;
+    else { s.mirror_left = past_l; s.mirror_right = past_r; }
+    return s;
+}
+
+// A side past the map's end: its plane pixels are the other side's, mirrored (sprites keep their own).
+void arena_mirror_line(const MegaDrive& md, uint8_t* plane_a, uint8_t* plane_b) {
+    const int E = md.vdp.ext, TW = 320 + 2 * E;
+    const ArenaStrips s = arena_strips(md, E);
+    if (s.mask || (!s.mirror_left && !s.mirror_right)) return;
+    for (uint8_t* p : {plane_a, plane_b}) {
+        if (s.mirror_right) for (int k = 0; k < s.right && k < TW; k++) p[TW - 1 - k] = k < s.left ? p[k] : 0;
+        if (s.mirror_left) for (int k = 0; k < s.left && k < TW; k++) p[k] = k < s.right ? p[TW - 1 - k] : 0;
+    }
+}
+
 void line_hook(void* host, int line, uint8_t* plane_a, uint8_t* plane_b, uint8_t* sprites) {
     (void)sprites;
     MegaDrive& md = *(MegaDrive*)host;
     if (md.ram16(MODE) == M_HALLWAY) { castle_outside_line(md, line, plane_a, plane_b); return; }
     if (!wide_gameplay(md)) return;
-    const bool storm = md.ram16(LEVEL) == 0x0C && !hud_window(md.vdp, line);
-    if (md.vdp.ext > 64 && !hud_window(md.vdp, line)) {
-        draw_far_columns(md, line, plane_a, false);
-        if (!(md.ram8(0xFF9800) & 1)) draw_far_columns(md, line, plane_b, true);   // plane B streamed too
-        if (storm) storm_room_line(md, line, plane_a);
+    if (!hud_window(md.vdp, line)) {
+        if (md.vdp.ext > 64) {
+            draw_far_columns(md, line, plane_a, false);
+            if (!(md.ram8(0xFF9800) & 1)) draw_far_columns(md, line, plane_b, true);   // plane B streamed too
+        }
+        if (md.ram16(LEVEL) == 0x0C) storm_room_line(md, line, plane_a);
+        else arena_mirror_line(md, plane_a, plane_b);
         return;
     }
-    if (storm) { storm_room_line(md, line, plane_a); return; }
-    if (line < 192 || !hud_window(md.vdp, line)) return;
+    if (line < 192) return;
     static std::vector<int16_t> maps[2][2][128];
     bool anchor = md.vdp.hook_flags & 1;
     bool border = line < 200 || line >= 216;
@@ -540,27 +579,13 @@ public:
         // the full plane width - every column is real scenery. Nothing to mask.
         if (md.ram16(MODE) == M_HALLWAY) { info.gameplay = true; return; }
         if (!info.gameplay || E == 0) return;
-        // What the (clamped) camera shows outside the original level bounds - only in the narrow boss arenas, whose
-        // camera is locked: Mickey can't go there, so it is shown dimmed. The arenas sit at their map's right end
-        // (the 4:3 camera already reached it): past it there are no tiles of the level, so that side mirrors the
-        // scenery of the other. (Past both ends: black.)
-        int camx = (int16_t)md.ram16(0xFFFA84);
-        int lo = (int16_t)md.ram16(0xFFFAB0), hi = (int16_t)md.ram16(0xFFFAB2);
-        if (storm) arena_bounds(md, lo, hi);
-        const int out_l = std::clamp(lo + E - camx, 0, E), out_r = std::clamp(camx + E - hi, 0, E);
-        const int map_w = md.ram16(0xFFFA8E) * 16;
-        const bool past_l = camx - E < 0, past_r = camx + 320 + E > map_w;
-        if (storm) {   // (both ends carry on with the room's pattern: storm_room_line)
-            info.dim_left = out_l;
-            info.dim_right = out_r;
-        } else if ((past_l && past_r) || (past_r && out_l < out_r) || (past_l && out_r < out_l)) {
-            info.mask_left = out_l;
-            info.mask_right = out_r;
+        const ArenaStrips s = arena_strips(md, E);   // (see there)
+        if (s.mask) {
+            info.mask_left = s.left;
+            info.mask_right = s.right;
         } else {
-            info.dim_left = out_l;
-            info.dim_right = out_r;
-            info.mirror_left = past_l;
-            info.mirror_right = past_r;
+            info.dim_left = s.left;
+            info.dim_right = s.right;
         }
         if (hud_window(md.vdp, 192)) info.mask_lines = 192;
     }

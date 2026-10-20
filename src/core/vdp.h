@@ -55,6 +55,10 @@ public:
     bool ignore_left_blank = false; // ignore reg0 bit5 (left column blanking) - used in widescreen
     // Output columns blanked at the left/right edge (level bounds in widescreen); HUD sprites stay.
     int  edge_mask_l = 0, edge_mask_r = 0;
+    // Set bit 11 (kSpritePixel) of frame-buffer pixels that come from a sprite, so the front end can treat the
+    // background and the sprites apart (e.g. dim only the scenery). Readers mask the colour with 0x7FF.
+    bool mark_sprites = false;
+    static constexpr uint16_t kSpritePixel = 0x800;
     // Widescreen view shift: planes and sprites are sampled `view_shift` pixels further right
     // (negative = left) than the game's own camera, the window plane stays in place. Lets a module
     // keep the widened view inside the level without touching the game's camera.

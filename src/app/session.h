@@ -65,7 +65,6 @@ private:
     float  mask_l_ = 0, mask_r_ = 0;     // animated masks (pixels)
     int    mask_lines_ = 0;
     int    dim_l_ = 0, dim_r_ = 0;           // dimmed scenery strips (FrameInfo::dim_left / dim_right)
-    bool   mirror_l_ = false, mirror_r_ = false;
     bool   pillar_below_ = false;
     bool   configured_ = false;
     Settings last_;

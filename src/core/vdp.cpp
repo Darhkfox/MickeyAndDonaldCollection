@@ -433,18 +433,20 @@ void VDP::render_line(int ln) {
 
     uint16_t bgc = cram[reg[7] & 0x3F];
     uint16_t* out = fb[ln];
+    const uint16_t spr_mark = mark_sprites ? kSpritePixel : 0;
     if (!(reg[12] & 0x08)) {
         for (int i = 0; i < TW; i++) {
             uint8_t a = la[i], b = lb[i], s = ls[i];
             uint8_t pix;
-            if ((s & 0x8F) > 0x80) pix = s;
+            uint16_t mark = 0;
+            if ((s & 0x8F) > 0x80) { pix = s; mark = spr_mark; }
             else if ((a & 0x8F) > 0x80) pix = a;
             else if ((b & 0x8F) > 0x80) pix = b;
-            else if (s & 0x0F) pix = s;
+            else if (s & 0x0F) { pix = s; mark = spr_mark; }
             else if (a & 0x0F) pix = a;
             else if (b & 0x0F) pix = b;
             else { out[i] = bgc; continue; }
-            out[i] = cram[pix & 0x3F];
+            out[i] = cram[pix & 0x3F] | mark;
         }
     } else {
         // Shadow / highlight mode.
@@ -468,7 +470,7 @@ void VDP::render_line(int ln) {
                 else inten = inten == 1 ? 0 : 2;
             }
             uint16_t c = pix ? cram[pix & 0x3F] : bgc;
-            out[i] = (uint16_t)((inten << 9) | c);
+            out[i] = (uint16_t)((inten << 9) | c | (from_sprite ? spr_mark : 0));
         }
     }
     if ((reg[0] & 0x20) && !ignore_left_blank) {

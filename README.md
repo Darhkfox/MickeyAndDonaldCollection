@@ -172,8 +172,8 @@ that fits the screen (2:1 on most phones).
 
 Player 1 uses the first connected gamepad plus the keyboard; player 2 the second gamepad or the P2 keys.
 Each player's keys, buttons and pad can be changed under *Options → Controls*, and so can the keys and pad
-buttons for fast forward and rewind (on Player 1's page). Picking a key or button that is already in use swaps
-the two. Tools such as DS4Windows or
+buttons for fast forward, rewind, the menu, quick save, quick load and screenshot (on Player 1's page; Esc always
+opens the menu too). Picking a key or button that is already in use swaps the two. Tools such as DS4Windows or
 Steam Input can make one controller appear twice; if one pad moves both players, pick each player's
 *Device* by hand.
 
@@ -253,7 +253,8 @@ A log line every 5 seconds gives the frame rate and the work per frame (`adb log
   the scenery beside them is dimmed, and a side past the end of the map mirrors the other side. The Storm's
   boss room (`$0C`, 512 px, its right 112 px a solid wall Mickey never reaches) keeps the view on the room in
   front of the wall (camera X range 0..80 ± E), and past either end of it plane A repeats the room's 128-px
-  pattern, dimmed. The castle
+  pattern, dimmed. The strips are built from the planes in the line hook and only the scenery is dimmed (the VDP
+  marks sprite pixels), so a boss's gloves or shots stay in view there. The castle
   hallway (`$22`) is wide as well: its init draws both 512×512 planes whole from a map that wraps seamlessly,
   and the camera only scrolls. Round 6's walk outside the castle (same mode) is one 512-pixel picture the camera
   pans across: left of it the castle's facade is mirrored (it carries on), right of the tower plane A is left out
