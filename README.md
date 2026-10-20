@@ -195,7 +195,7 @@ build.bat                                         :: builds build\bin\DisneyClas
 package.bat                                       :: dist\Mickey and Donald Collection: the exe, per-game
                                                   ::   shortcuts and the ROMs in this folder, for local play
 powershell -ExecutionPolicy Bypass -File release.ps1
-                                                  :: dist\Mickey-and-Donald-Collection-v1.0-win64.zip:
+                                                  :: dist\Mickey-and-Donald-Collection-v<version>-win64.zip:
                                                   ::   the exe and readme.txt only (no ROMs)
 ```
 
