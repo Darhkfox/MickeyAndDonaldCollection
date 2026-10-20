@@ -253,7 +253,8 @@ A log line every 5 seconds gives the frame rate and the work per frame (`adb log
   the scenery beside them is dimmed, and a side past the end of the map mirrors the other side. The castle
   hallway (`$22`) is wide as well: its init draws both 512×512 planes whole from a map that wraps seamlessly,
   and the camera only scrolls. Round 6's walk outside the castle (same mode) is one 512-pixel picture the camera
-  pans across, so past its ends plane A is left out and the landscape on plane B carries on.
+  pans across: left of it the castle's facade is mirrored (it carries on), right of the tower plane A is left out
+  and the landscape on plane B carries on.
 - **QuackShot.** Objects are spawned from a grid of 128-pixel columns as the camera crosses them
   (`$19C08`). From 2:1 a second, farther column is processed each frame; entries placed to appear behind
   the player (swoop-in birds and others, 41 of 1,036) are held back until the camera reaches the spot they

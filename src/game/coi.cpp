@@ -362,10 +362,12 @@ int prop_copy(void* host, int index, uint16_t attr, int x, int y) {
 
 // Round 6's walk outside the castle (drawn by the hallway mode, $7ADF4: plane A block definitions based at $A170)
 // is a single 512-px picture - the castle, a gap with the landscape (plane B), the tower - that the camera pans
-// across (X 0..192): the 4:3 view starts at the castle's left end and stops at the tower's right edge. A wider
+// across (X 0..192): the 4:3 view starts inside the castle's facade and stops at the tower's right edge. A wider
 // view past either end would show plane A wrapping round (the tower again left of the castle, the castle again
-// right of the tower): there plane A is left out, and the landscape carries on behind. Plane B (half speed, X 0..96)
-// doesn't join up where it wraps: past that its line is mirrored (only the last 12 px at 21:9 show it).
+// right of the tower). Left of the picture the castle is mirrored instead, so its facade carries on (a second arch,
+// the battlements and the rampart join up); right of the tower plane A is left out and the landscape carries on.
+// Plane B (half speed, X 0..96) doesn't join up where it wraps: past that its line is mirrored (only the last 12 px
+// at 21:9 show it).
 void castle_outside_line(const MegaDrive& md, int line, uint8_t* plane_a, uint8_t* plane_b) {
     if (md.ram16(ROUND) != 5 || md.ram16(0xFF0000) != 0xA170) return;
     const VDP& v = md.vdp;
@@ -379,7 +381,10 @@ void castle_outside_line(const MegaDrive& md, int line, uint8_t* plane_a, uint8_
     default: hoff = line * 4; break;
     }
     const int camx = -(v.vram16(hsb + hoff) & 0x3FF) & 0x1FF;   // plane x at view x 0 (the camera: 0..192)
-    for (int i = 0; i < E - camx && i < TW; i++) plane_a[i] = 0;
+    for (int i = E - camx - 1; i >= 0; i--) {                    // plane x -1, -2, ... = 0, 1, ... (the castle)
+        const int src = 2 * (E - camx) - 1 - i;
+        if (src < TW) plane_a[i] = plane_a[src];
+    }
     for (int i = std::max(0, 512 - camx + E); i < TW; i++) plane_a[i] = 0;
     const int camb = -(v.vram16(hsb + hoff + 2) & 0x3FF) & 0x1FF;
     for (int i = E - camb - 1; i >= 0; i--) {                    // plane x -1, -2, ... = 0, 1, ...

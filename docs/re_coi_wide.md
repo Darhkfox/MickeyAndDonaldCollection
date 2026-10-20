@@ -514,8 +514,9 @@ There are no act-intro cards or map screens in this game (the castle hall plays 
   The init (`$7AB7C`, `$7C234`) writes both 64×64-cell planes whole from a 32×32-block map that wraps
   seamlessly, so the port shows it at every width (checked for all six rounds, reached by beating each boss:
   the centre 320 columns match 4:3 exactly). Round 6 switches to the castle outside (`$7ADF4`, plane A block
-  definitions based at `$A170`): one 512-px picture panned over by camera X 0..192, so past its ends the line
-  hook leaves plane A out and plane B's landscape shows; plane B (half speed, X 0..96) doesn't join up where it
+  definitions based at `$A170`): one 512-px picture panned over by camera X 0..192. Left of it the line hook
+  mirrors plane A (the castle's facade carries on: a second arch, battlements and rampart join up); right of the
+  tower it leaves plane A out and plane B's landscape shows; plane B (half speed, X 0..96) doesn't join up where it
   wraps, so past that its line is mirrored (the last 12 px at 21:9).
 
 ## 8. Verification summary (all reproducible)
