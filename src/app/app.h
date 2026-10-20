@@ -37,7 +37,10 @@ struct GameSlot {
 
 class Jukebox {
 public:
-    bool open(GameModule* module, const std::vector<uint8_t>& rom, const Settings& s, bool sfx);
+    // `packs`: the MD+ soundtracks found; the Music Player offers this game's as versions of the music, starting
+    // with the one the game is set to play (Settings::soundtrack).
+    bool open(GameModule* module, const std::vector<uint8_t>& rom, const Settings& s, bool sfx,
+              const std::vector<SoundtrackPack>& packs);
     void close();
     bool active() const { return active_; }
     void update(const UiInput& in);
@@ -69,8 +72,26 @@ private:
     float peak_[10] = {};
     bool paused_ = false;
     Rect list_rect_ = {}, switch_rect_ = {};   // where the last draw put the track list / game switch, for taps
+    Rect version_rect_ = {};                   // ... and the version switch
     float row_ = 0, list_y0_ = 0;
     bool free_scroll_ = false;           // touch: the list was dragged, so it doesn't follow the selection
+    // Versions of the music: [0] the game's own (its sound driver), then each MD+ soundtrack for the game, with the
+    // CD track it plays for each tune (music ID -> track, looping).
+    struct Version {
+        SoundtrackPack pack;
+        std::map<int, std::pair<int, bool>> tracks;
+        std::vector<SoundEntry> more;    // its tracks no tune names (id = -track), listed after the game's tunes
+    };
+    std::vector<Version> versions_;
+    std::vector<SoundEntry> tunes_;      // the game's own list (list_ adds the version's `more`)
+    int ver_ = 0;
+    bool cd_ = false;                    // the playing entry is a soundtrack track (not the sound driver)
+    double cd_len_ = 0;                  // its length (s)
+    float cd_level_[2] = {};             // its loudness in the last audio mixed (left, right)
+    void start(int i);                   // plays list_[i] in the current version
+    void stop_playing();
+    void set_version(int v);
+    bool has_version(int i) const;       // list_[i] has a track in the current (MD+) version
 };
 
 class App {

@@ -874,6 +874,13 @@ public:
 
     void stop_sound(MegaDrive& md) override { request(md, 0xF9); }
 
+    // The game's sound request ($7FED8) sends the ID queued in $EE53 / $EE52 to the driver; an MD+ patch hooks it.
+    bool music_request(MegaDrive& md, int id) override {
+        md.set_ram8(0xFFEE53, 0);
+        md.set_ram8(0xFFEE52, (uint8_t)id);
+        return call_68k(md, 0x7FED8);
+    }
+
 
 private:
     static void set_plunger(MegaDrive& md, int type) {

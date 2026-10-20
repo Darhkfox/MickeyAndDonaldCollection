@@ -32,6 +32,9 @@ bool press_until(MegaDrive& md, uint16_t button, const std::function<bool()>& co
 // Parks the 68000 for good (interrupts masked) and releases the Z80 bus, leaving the Z80 sound
 // driver running on its own - used by the music player.
 void freeze_68k(MegaDrive& md);
+// Runs the 68000 subroutine at `entry` until it returns, on a parked CPU (freeze_68k), with interrupts masked; the
+// CPU is parked again afterwards. Only the 68000 runs. Returns false if it hasn't returned after `max_cycles`.
+bool call_68k(MegaDrive& md, uint32_t entry, int max_cycles = 2000000);
 
 // HUD strip remapping for widescreen: the window-plane status bar is split into segments
 // that anchor to the left edge, the centre or the right edge of the widened screen; gaps are

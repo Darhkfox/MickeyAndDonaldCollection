@@ -724,6 +724,17 @@ public:
     }
 
     void stop_sound(MegaDrive& md) override { md.zram[Z_SFX] = 0xD1; }
+
+    // The round's music is asked for by the ID in $F40E and a jump to the sound request ($79F86) from $96A8; an MD+
+    // patch points that jump (and the game's other music requests) at its own handler.
+    bool music_request(MegaDrive& md, int id) override {
+        uint32_t entry = 0x79F86;
+        const uint16_t op = (uint16_t)(md.rom[0x96A8] << 8 | md.rom[0x96A9]);
+        if (op == 0x4EF9 || op == 0x4EB9)
+            entry = (uint32_t)md.rom[0x96AA] << 24 | md.rom[0x96AB] << 16 | md.rom[0x96AC] << 8 | md.rom[0x96AD];
+        md.set_ram8(0xFFF40E, (uint8_t)id);
+        return call_68k(md, entry);
+    }
 };
 
 }  // namespace

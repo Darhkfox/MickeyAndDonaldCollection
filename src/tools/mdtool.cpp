@@ -375,6 +375,7 @@ API void mdt_module_jukebox_boot(void* h) { Tool* t = (Tool*)h; if (t->module) t
 API void mdt_module_jukebox_frame(void* h) { Tool* t = (Tool*)h; if (t->module) t->module->jukebox_frame(t->md); }
 API void mdt_module_play(void* h, int id) { Tool* t = (Tool*)h; if (t->module) t->module->play_sound(t->md, id); }
 API void mdt_module_stop(void* h) { Tool* t = (Tool*)h; if (t->module) t->module->stop_sound(t->md); }
+API int mdt_module_music_request(void* h, int id) { Tool* t = (Tool*)h; return t->module && t->module->music_request(t->md, id) ? 1 : 0; }
 
 // ---- Achievement detectors on RAM images (headless checks of GameModule::achievement_frame) ----
 namespace {

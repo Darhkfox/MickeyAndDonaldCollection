@@ -2,6 +2,7 @@
 #include "romfind.h"
 #include "sys.h"
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 #include <cwctype>
@@ -27,6 +28,7 @@ struct CueTrack {
     bool raw = false;
     int64_t start = 0, loop = 0;
     bool can_loop = true;
+    std::string title;
 };
 
 std::vector<CueTrack> parse_cue(const std::wstring& path) {
@@ -61,7 +63,10 @@ std::vector<CueTrack> parse_cue(const std::wstring& path) {
             t.file = file;
             t.raw = raw;
             if (line.find("AUDIO") != std::string::npos && t.number > 0) out.push_back(t);
-            else out.push_back(CueTrack{t.number, L"", false, 0, 0, false});   // a data track keeps its number
+            else out.push_back(CueTrack{t.number, L"", false, 0, 0, false, ""});   // a data track keeps its number
+        } else if (starts("TITLE ") && !out.empty()) {
+            size_t q1 = line.find('"'), q2 = q1 == std::string::npos ? q1 : line.rfind('"');
+            out.back().title = q2 != std::string::npos && q2 > q1 ? line.substr(q1 + 1, q2 - q1 - 1) : line.substr(6);
         } else if (starts("INDEX 01") && !out.empty()) {
             int mm = 0, ss = 0, ff = 0;
             if (sscanf(line.c_str() + 8, " %d:%d:%d", &mm, &ss, &ff) == 3) out.back().start = ((int64_t)(mm * 60 + ss) * 75 + ff) * 588;
@@ -155,6 +160,37 @@ std::vector<SoundtrackPack> find_soundtracks(const std::vector<std::pair<std::st
     std::sort(out.begin(), out.end(), [](const SoundtrackPack& a, const SoundtrackPack& b) {
         return a.game_id != b.game_id ? a.game_id < b.game_id : a.name < b.name;
     });
+    return out;
+}
+
+// "28-Boss_JackInTheBox.wav" -> "Boss - Jack In The Box"
+static std::string name_from_file(const std::wstring& path) {
+    std::string n = to_utf8(file_name(path));
+    const size_t dot = n.rfind('.');
+    if (dot != std::string::npos && dot > 0) n.resize(dot);
+    size_t i = 0;
+    while (i < n.size() && isdigit((unsigned char)n[i])) i++;
+    if (i > 0 && i < n.size() && strchr("-_ .", n[i])) n = n.substr(i + 1);
+    std::string out;
+    for (size_t k = 0; k < n.size(); k++) {
+        const unsigned char c = (unsigned char)n[k], prev = k ? (unsigned char)n[k - 1] : 0;
+        if (c == '_') { out += " - "; continue; }
+        if (islower(prev) && (isupper(c) || isdigit(c))) out += ' ';
+        out += (char)c;
+    }
+    return out;
+}
+
+std::vector<std::pair<int, std::string>> soundtrack_track_names(const SoundtrackPack& pack) {
+    std::vector<std::pair<int, std::string>> out;
+    const std::vector<CueTrack> cue = parse_cue(pack.cue);
+    for (const CueTrack& t : cue) {
+        if (t.file.empty() || !exists(t.file)) continue;
+        const bool shared = std::count_if(cue.begin(), cue.end(), [&](const CueTrack& o) { return o.file == t.file; }) > 1;
+        std::string name = !t.title.empty() ? t.title : shared ? std::string() : name_from_file(t.file);
+        if (name.empty()) name = "Track " + std::to_string(t.number);
+        out.push_back({t.number, name});
+    }
     return out;
 }
 
@@ -358,6 +394,19 @@ void MdPlus::stop() {
 }
 
 bool MdPlus::playing() const { return cur_ > 0 && !paused_; }
+
+double MdPlus::position() const {
+    return cur_ && st_ ? std::max<int64_t>(0, pos_ - 3) / (double)st_->rate : 0.0;   // (pos_ runs 3 frames ahead)
+}
+
+double MdPlus::track_seconds(int track) const {
+    if (track <= 0 || track > (int)tracks_.size() || tracks_[track - 1].file.empty()) return 0.0;
+    const Track& t = tracks_[track - 1];
+    Stream s;
+    if (!s.open(t.file, t.raw)) return 0.0;
+    const int64_t end = t.end >= 0 ? std::min(t.end, s.frames) : s.frames;
+    return std::max<int64_t>(0, end - t.start) / (double)s.rate;
+}
 
 void MdPlus::write(uint32_t addr, uint16_t value, int size) {
     if (size != 2) return;

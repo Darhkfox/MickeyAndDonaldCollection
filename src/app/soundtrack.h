@@ -25,6 +25,10 @@ std::vector<SoundtrackPack> find_soundtracks(const std::vector<std::pair<std::st
 // "... Patch and Soundpack by GMKalandar" -> "by GMKalandar".
 std::string soundtrack_label(const std::string& pack_name);
 
+// The pack's tracks whose audio is there: number and a name (the cue's TITLE, else one made from the file name:
+// "28-Boss_JackInTheBox.wav" -> "Boss - Jack In The Box"; "Track n" for tracks sharing one file).
+std::vector<std::pair<int, std::string>> soundtrack_track_names(const SoundtrackPack& pack);
+
 // Applies a BPS or IPS patch to `rom`. BPS checks the source and result CRCs.
 bool apply_rom_patch(const std::vector<uint8_t>& rom, const std::wstring& patch_path, std::vector<uint8_t>& out,
                      std::string& error);
@@ -40,6 +44,11 @@ public:
     void mix(int16_t* out, int frames, double out_rate, float gain);
     void stop();               // power-on / reset
     bool playing() const;
+    // The Music Player: plays a track directly (looping from the cue's loop point if `loop`); the playing track's
+    // position and a track's length, in seconds.
+    bool play_track(int track, bool loop) { return play(track, loop); }
+    double position() const;
+    double track_seconds(int track) const;
     // Save states: what plays and where ("t<track>,<frame>,<flags>,<volume>"; empty = nothing).
     std::string state() const;
     void set_state(const std::string& s);

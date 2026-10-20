@@ -19,6 +19,7 @@ public:
     // An MD+ soundtrack for the game (open() was given the ROM with the pack's patch applied).
     bool attach_soundtrack(const SoundtrackPack& pack, std::string& error);
     bool has_soundtrack() const { return mdplus_ != nullptr; }
+    MdPlus* soundtrack() { return mdplus_.get(); }   // (the Music Player plays its tracks directly)
     GameModule* module() const { return module_; }
     MegaDrive& md() { return *md_; }
 

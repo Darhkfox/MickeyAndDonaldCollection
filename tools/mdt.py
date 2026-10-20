@@ -86,6 +86,8 @@ if hasattr(_dll, 'mdt_module_can_configure'):
     for _n in ['mdt_module_jukebox_boot', 'mdt_module_jukebox_frame', 'mdt_module_stop']:
         getattr(_dll, _n).argtypes = [C.c_void_p]
     _dll.mdt_module_play.argtypes = [C.c_void_p, C.c_int]
+    if hasattr(_dll, 'mdt_module_music_request'):
+        _dll.mdt_module_music_request.argtypes = [C.c_void_p, C.c_int]
 if hasattr(_dll, 'mdt_debug_layers'):
     _dll.mdt_debug_layers.argtypes = [C.c_void_p, C.c_int]
 if hasattr(_dll, 'mdt_view'):
@@ -368,6 +370,11 @@ class ModuleMD(MD):
 
     def stop(self):
         _dll.mdt_module_stop(self.h)
+
+    def music_request(self, sid):
+        """the game's own music request for `sid` on a jukebox_boot()-ed machine (an MD+ patched ROM answers
+        with cartridge commands: see cart_log)"""
+        return bool(_dll.mdt_module_music_request(self.h, sid))
 
 
 def ramsearch_snapshot(md):

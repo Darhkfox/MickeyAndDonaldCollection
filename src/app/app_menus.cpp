@@ -440,5 +440,6 @@ MenuPage App::level_page() {
 
 void App::open_jukebox(int game, bool sfx) {
     if (game < 0 || game >= kGameCount || !games_[game].rom.found) return;
-    jukebox_.open(games_[game].module.get(), games_[game].rom.data, settings_, sfx);
+    if (!sfx) scan_soundtracks();   // (the Music Player offers the game's MD+ soundtracks too)
+    jukebox_.open(games_[game].module.get(), games_[game].rom.data, settings_, sfx, soundtracks_);
 }

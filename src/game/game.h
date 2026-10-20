@@ -130,6 +130,10 @@ public:
     virtual void jukebox_frame(MegaDrive& md) { (void)md; }
     virtual void play_sound(MegaDrive& md, int id) { (void)md; (void)id; }
     virtual void stop_sound(MegaDrive& md) { (void)md; }
+    // Asks for music `id` the way the game itself does, running its own request code (on a machine readied by
+    // jukebox_boot). On an MD+ patched ROM that code is hooked and answers with commands to the CD audio overlay:
+    // how the Music Player finds the soundtrack's track for each tune. False if the module can't.
+    virtual bool music_request(MegaDrive& md, int id) { (void)md; (void)id; return false; }
 
     // Achievements: the list (order fixed: indices are what achievement_frame() reports), and the check run after
     // every emulated frame of a game being played with achievements on. Reads RAM only.

@@ -108,6 +108,11 @@ that fits the screen (2:1 on most phones).
 **Music player & sound test**
 - Every music track, sound effect and voice of each game, played by the game's own sound driver, with
   channel meters.
+- With an MD+ soundtrack for the game, the Music Player plays its arranged tracks too: *Tab* / *(Y)* switches
+  between the original music and each pack (it starts on the one the game is set to), and the tune playing
+  carries on in the other version. Each tune gets the track the pack plays for it in the game (the player asks
+  the pack's own patch), tunes the pack doesn't arrange play the original, and the pack's extra tracks (such as
+  per-boss themes) are listed at the end.
 
 **Level select** (pause menu, while achievements are off)
 - Castle of Illusion: 28 entries (every act, the Library's tea cups, each boss and the final battle).

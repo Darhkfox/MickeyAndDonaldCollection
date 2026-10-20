@@ -89,6 +89,41 @@ void freeze_68k(MegaDrive& md) {
     md.z80_reset = false;
 }
 
+namespace {
+// The return address call_68k pushes: the vector table, never code. Reaching it ends the call before it executes.
+constexpr uint32_t kCallReturn = 0x000000;
+void call_trace(void* ctx, uint32_t pc) {
+    M68k& c = *(M68k*)ctx;
+    if ((pc & 0xFFFFFF) == kCallReturn) c.end_run();
+}
+}  // namespace
+
+bool call_68k(MegaDrive& md, uint32_t entry, int max_cycles) {
+    M68k& c = md.cpu;
+    const M68k::HookFn trace = c.trace_fn;
+    void* const trace_ctx = c.trace_ctx;
+    const uint32_t sp = c.r[15];
+    c.r[15] = sp - 4;
+    c.write32(c.r[15], kCallReturn);
+    c.pc = entry & 0xFFFFFF;
+    c.set_sr(0x2700);
+    c.stopped = false;
+    c.trace_fn = call_trace;
+    c.trace_ctx = &c;
+    int used = 0;
+    while ((c.pc & 0xFFFFFF) != kCallReturn && used < max_cycles) {
+        const int n = c.run(4000);
+        used += n;
+        if (n == 0 && (c.pc & 0xFFFFFF) != kCallReturn) break;   // (stopped by the routine)
+    }
+    const bool ok = (c.pc & 0xFFFFFF) == kCallReturn;
+    c.trace_fn = trace;
+    c.trace_ctx = trace_ctx;
+    c.r[15] = sp;
+    freeze_68k(md);
+    return ok;
+}
+
 void HudLayout::build(int ext, int width) {
     const int total = width + ext * 2;
     map.assign(total, -1);

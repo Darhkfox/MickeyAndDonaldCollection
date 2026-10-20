@@ -230,6 +230,13 @@
      Every music track, sound effect and voice of the game, played by the
      game's own sound driver, with meters for the sound channels.
 
+     With an MD+ soundtrack for the game (see SOUNDTRACKS below), the Music
+     Player plays its arranged tracks too. Tab or (Y) switches between the
+     original music and the pack -- the tune playing carries on in the other
+     version -- and it starts on the one the game is set to. Tunes the pack
+     doesn't arrange play the original ("original" next to them), and the
+     pack's extra tracks, such as the per-boss themes, are listed at the end.
+
   PLAYER 2 CONTROLS  (World of Illusion)
      The second player's keys and gamepad.
 
@@ -434,6 +441,8 @@
   the pack while the sound effects stay the console's own. Save states
   remember the track and where it was. Soundtrack Volume sets its level.
   Widescreen, cheats, achievements and the level select all work as usual.
+  The Music Player can play the pack's tracks too (see SOUND TEST / MUSIC
+  PLAYER above).
 
   The pack must be made for the same USA ROM the collection uses (the patch
   checks it). Only MD+ packs are supported for now, not MSU-MD ones.
