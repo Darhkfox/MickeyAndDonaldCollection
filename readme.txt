@@ -208,7 +208,8 @@
                               Infinite Items, Infinite Continues, Start With
                               Full Power, Walk Faster, Moon Jump (keep rising
                               while jump is held), Jump in Midair (every press
-                              lifts Mickey again) -- from the classic Game
+                              lifts Mickey again; turning one of the two jumps
+                              on turns the other off) -- from the classic Game
                               Genie codes -- and the developers' hidden level
                               select on the OPTIONS screen.
        QuackShot ............ Invincibility, Infinite Health, Infinite Lives,

@@ -25,6 +25,7 @@ struct CheatEntry {
     std::string key;        // stable id stored in settings.ini
     std::string name;
     std::string desc;
+    std::vector<std::string> excludes;   // cheats switched off when this one is switched on (they don't work together)
 };
 
 struct GameConfig {

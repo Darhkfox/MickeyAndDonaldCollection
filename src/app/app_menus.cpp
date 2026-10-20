@@ -403,8 +403,13 @@ MenuPage App::cheats_page() {
     std::string gid = m->id();
     for (const CheatEntry& c : m->cheats()) {
         std::string key = c.key;
+        std::vector<std::string> excludes = c.excludes;
         p.items.push_back(MenuItem::toggle(c.name, [this, gid, key]() { return settings_.cheat(gid, key); },
-                                           [this, gid, key](bool v) { settings_.set_cheat(gid, key, v); apply_settings(); }, c.desc));
+                                           [this, gid, key, excludes](bool v) {
+                                               settings_.set_cheat(gid, key, v);
+                                               if (v) for (const std::string& x : excludes) settings_.set_cheat(gid, x, false);
+                                               apply_settings();
+                                           }, c.desc));
     }
     p.items.push_back(MenuItem::action("Disable All", [this, gid]() {
         settings_.cheats[gid].clear();

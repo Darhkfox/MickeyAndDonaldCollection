@@ -768,8 +768,11 @@ public:
             {"inf_continues", "Infinite Continues", "Game over never uses up a continue."},
             {"max_power", "Start With Full Power", "Mickey starts every level with 5 power stars (on Hard: every round and restart)."},
             {"walk_fast", "Walk Faster", "Mickey walks at a steady 2.3 pixels a frame instead of 1.4 (based on Game Genie AMFA-AABN + ADFA-BAVR)."},
-            {"moon_jump", "Moon Jump", "Mickey keeps rising for as long as the jump button is held (Game Genie RHEA-A6ZW + RHEA-A60G)."},
-            {"midair_jump", "Jump in Midair", "Every press of jump lifts Mickey again, even in the air (Game Genie RHEA-A6ZW + RHEA-A60G + A1EA-AAF0)."},
+            // (Jump in Midair is Moon Jump's codes plus one that stops the held button rising: one or the other)
+            {"moon_jump", "Moon Jump", "Mickey keeps rising for as long as the jump button is held (Game Genie RHEA-A6ZW + RHEA-A60G). "
+                                       "Turns Jump in Midair off.", {"midair_jump"}},
+            {"midair_jump", "Jump in Midair", "Every press of jump lifts Mickey again, even in the air (Game Genie RHEA-A6ZW + RHEA-A60G + "
+                                              "A1EA-AAF0). Turns Moon Jump off.", {"moon_jump"}},
             {"debug_select", "Developer Level Select", "Re-enables the hidden level select on the OPTIONS screen: A steps through the levels, START plays it. (B works too, but also changes the highlighted option.)"},
         };
     }
