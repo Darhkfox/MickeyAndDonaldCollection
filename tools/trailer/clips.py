@@ -56,7 +56,8 @@ CLIPS = {
     'v11_storm':    dict(game='coi', level=12, ext=108, n=420, pre=150, boss=True),
     'v11_worm':     dict(game='coi', level=22, ext=108, n=420, pre=60, boss=True),
     'v11_mizrabel': dict(game='coi', level=27, ext=108, n=420, pre=90, boss=True),
-    'v11_cheats':   dict(game='coi', level=3, ext=40, n=480, pre=60, cheats=['walk_fast', 'moon_jump', 'midair_jump']),
+    # (written by cheat_search.py, not bot.py: with Jump in Midair on too, holding jump no longer moon-jumps)
+    'v11_cheats':   dict(game='coi', level=0, ext=40, n=480, pre=60, cheats=['walk_fast', 'moon_jump']),
     'v11_md_forest': dict(game='coi', level=0, ext=40, n=600, pre=60, mdplus=True,
                           rom=MDPLUS_ROM['coi']),
     'v11_md_duckburg': dict(game='qs', level=0, ext=40, n=540, pre=60, mdplus=True, rom=MDPLUS_ROM['qs']),

@@ -32,7 +32,7 @@ def scene_title(n, name='v11_hall4', a=300):
         ta = ease((i - S(0.5)) / S(0.8))
         f = centered_text(f, [('MICKEY & DONALD COLLECTION', F_BOLD, 96, WHITE, 330),
                               ('VERSION 1.1', F_BOLD, 78, ORANGE, 460),
-                              ('THE UPDATE', F_BOLD, 52, WHITE, 575)], ta)
+                              ('EXCITING NEW FEATURES AND UPDATES!', F_BOLD, 52, WHITE, 575)], ta)
         if i > n - S(0.5): f = fade(f, (n - i) / S(0.5))
         return f
     return n, render
