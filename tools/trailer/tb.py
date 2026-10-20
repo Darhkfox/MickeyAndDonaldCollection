@@ -16,9 +16,10 @@ EXT = {'4:3': 0, '16:10': 20, '16:9': 40, '2:1': 64, '21:9': 108}
 WIDE_SETTING = {0: 0, 20: 1, 40: 2, 64: 3, 108: 4}       # settings.ini [video] widescreen=
 
 
-def session(game, ext, cheats=()):
-    """A headless game set up the way the app sets it up (HUD re-anchored, no sprite-per-line limit)."""
-    md = ModuleMD(ROMS[game], game)
+def session(game, ext, cheats=(), rom=None):
+    """A headless game set up the way the app sets it up (HUD re-anchored, no sprite-per-line limit). rom: another
+    ROM image for the game (e.g. an MD+ soundtrack's patched one)."""
+    md = ModuleMD(rom or ROMS[game], game)
     md.configure(ext=ext, hud_anchor=True, cheats=list(cheats))
     md.set_ext(ext, sprite_limit=False)
     md.game = game; md.ext = ext; md.cheats = list(cheats)

@@ -8,6 +8,10 @@ name: game, level (level-select index), var (World of Illusion: 0 Mickey, 1 Dona
       frames per recorded frame), rewind (frames, loops): after `frames` of play R is held for `loops`,
       takes: extra recordings of the same run with other settings {suffix: {setting: value}}
 """
+import os as _os
+_QA = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), 'qa', 'mdplus', 'out')
+MDPLUS_ROM = {'coi': _os.path.join(_QA, 'coi_patched.bin'), 'qs': _os.path.join(_QA, 'qs_patched.bin')}
+
 CLIPS = {
     # ---- the three games
     'coi_forest':   dict(game='coi', level=0, ext=40, n=600, pre=60),
@@ -46,4 +50,14 @@ CLIPS = {
                          takes={'nearest': {'filter': 0}, 'scan': {'filter': 3}, 'crt': {'filter': 4}}),
     'ff':           dict(game='qs', level=0, ext=40, n=240, pre=30, ff=True),
     'rew':          dict(game='coi', level=10, ext=40, n=480, pre=60, rewind=(300, 180)),
+    # ---- v1.1 update trailer (boss: stay clean in a boss arena; rom: the MD+ soundtrack's patched ROM)
+    'v11_tree':     dict(game='coi', level=4, ext=108, n=480, pre=90, boss=True),
+    'v11_toy':      dict(game='coi', level=8, ext=108, n=480, pre=120, boss=True),
+    'v11_storm':    dict(game='coi', level=12, ext=108, n=420, pre=150, boss=True),
+    'v11_worm':     dict(game='coi', level=22, ext=108, n=420, pre=60, boss=True),
+    'v11_mizrabel': dict(game='coi', level=27, ext=108, n=420, pre=90, boss=True),
+    'v11_cheats':   dict(game='coi', level=3, ext=40, n=480, pre=60, cheats=['walk_fast', 'moon_jump', 'midair_jump']),
+    'v11_md_forest': dict(game='coi', level=0, ext=40, n=600, pre=60, mdplus=True,
+                          rom=MDPLUS_ROM['coi']),
+    'v11_md_duckburg': dict(game='qs', level=0, ext=40, n=540, pre=60, mdplus=True, rom=MDPLUS_ROM['qs']),
 }

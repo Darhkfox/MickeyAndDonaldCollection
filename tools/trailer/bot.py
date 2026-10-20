@@ -69,6 +69,11 @@ CANDS = [
     ('vjump',  [('C', 20)]),
     ('back',   [('LEFT', 20)]),
 ]
+# boss fights (clip 'boss'): stay clean around the arena - waiting is preferred, the rest dodge
+BOSS = [('wait', [('', 20)]), ('hop', [('C', 8), ('', 12)]), ('jump', [('C', 20)]), ('left', [('LEFT', 20)]),
+        ('right', [('RIGHT', 20)]), ('ljump', [('LEFT+C', 20)]), ('rjump', [('RIGHT+C', 20)])]
+BOSS_LOOKS = [[('', 40)], [('C', 20), ('', 20)], [('LEFT', 40)], [('RIGHT', 40)], [('LEFT+C', 20), ('', 20)],
+              [('RIGHT+C', 20), ('', 20)]]
 FLY = [('fly', [('RIGHT', 20)]), ('up', [('RIGHT+UP', 20)]), ('down', [('RIGHT+DOWN', 20)]), ('hover', [('', 20)]),
        ('rise', [('UP', 20)]), ('sink', [('DOWN', 20)])]
 LOOKS = [[('RIGHT', 40)], [('RIGHT+C', 14), ('RIGHT', 26)], [('RIGHT+C', 30), ('RIGHT', 10)], [('', 40)],
@@ -83,6 +88,7 @@ def mirror(seq, c):
 
 
 def progress(s, c):
+    if c.get('boss'): return 0     # (only staying clean counts)
     return s['x'] if c.get('dir', 'right') == 'right' else -s['x']
 
 
@@ -109,8 +115,8 @@ def switch_to(md, ext):
 
 
 def search_from(md, c, name, state, frame0, total):
-    cands = [(k, mirror(seq, c)) for k, seq in (FLY if c.get('fly') else CANDS)]
-    looks = [mirror(l, c) for l in (FLY_LOOKS if c.get('fly') else LOOKS)]
+    cands = [(k, mirror(seq, c)) for k, seq in (FLY if c.get('fly') else BOSS if c.get('boss') else CANDS)]
+    looks = [mirror(l, c) for l in (FLY_LOOKS if c.get('fly') else BOSS_LOOKS if c.get('boss') else LOOKS)]
     path, tried, states, scores = [], [None], [state], []
     backs = 0
     while frame0 + len(path) * CH < total:
@@ -180,7 +186,7 @@ def replay(md, c, start, seq, check=True):
 
 
 def new_md(c):
-    md = session(c['game'], c['ext'], c.get('cheats', ()))
+    md = session(c['game'], c['ext'], c.get('cheats', ()), c.get('rom'))
     md.two = c.get('var', 0) == 2 and c['game'] == 'woi'
     return md
 
