@@ -103,6 +103,71 @@ def ui_segments(name, segs, head, sub, game=None):
 MD_MP_SEGS = [(25, 250), (318, 190), (866, 230)]
 
 
+class PhoneClip:
+    """the Android recording (screenrecord on the emulator, 2400x1080, converted to 60 fps at the phone frame's
+    screen size: trailer_work/cap/android_phone_60.mkv, from 1.0 s of android_phone.mp4); sequential reads"""
+    W, H = 1520, 684
+    def __init__(self, path):
+        self.path = path; self.p = None; self.pos = 0; self.last = None
+    def _open(self, k):
+        if self.p: self.p.kill()
+        self.p = subprocess.Popen(['ffmpeg', '-v', 'error', '-ss', '%.4f' % (k / 60.0), '-i', self.path, '-f', 'rawvideo',
+                                   '-pix_fmt', 'rgb24', '-'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        self.pos = k
+    def __getitem__(self, k):
+        if self.last is not None and k == self.pos - 1: return self.last
+        if self.p is None or k < self.pos or k > self.pos + 120: self._open(k)
+        size = self.W * self.H * 3
+        while self.pos <= k:
+            buf = self.p.stdout.read(size)
+            if len(buf) < size: break
+            self.last = np.frombuffer(buf, np.uint8).reshape(self.H, self.W, 3); self.pos += 1
+        return self.last
+
+
+_phone = None
+def phone_frame(screen):
+    """the recording inside a drawn phone (landscape): black body, rounded corners, a punch-hole camera"""
+    from PIL import ImageDraw
+    sw, sh = PhoneClip.W, PhoneClip.H
+    x0, y0 = (VW - sw) // 2, 118
+    f = backdrop(screen)
+    im = Image.fromarray(f)
+    d = ImageDraw.Draw(im)
+    m = 30
+    d.rounded_rectangle((x0 - m - 6, y0 - m - 6, x0 + sw + m + 6, y0 + sh + m + 6), 74, fill=(70, 74, 86))
+    d.rounded_rectangle((x0 - m, y0 - m, x0 + sw + m, y0 + sh + m), 68, fill=(8, 8, 10))
+    a = np.asarray(im).copy()
+    # the screen, with rounded corners
+    mask = Image.new('L', (sw, sh), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, sw - 1, sh - 1), 40, fill=255)
+    mk = np.asarray(mask)[..., None] > 0
+    region = a[y0:y0 + sh, x0:x0 + sw]
+    a[y0:y0 + sh, x0:x0 + sw] = np.where(mk, screen, region)
+    im = Image.fromarray(a)
+    d = ImageDraw.Draw(im)
+    cx, cy = x0 - m // 2 - 2, y0 + sh // 2
+    d.ellipse((cx - 7, cy - 7, cx + 7, cy + 7), fill=(28, 30, 38))
+    return np.asarray(im).copy()
+
+
+def scene_phone(segs, head, sub):
+    """segs: [(first frame of android_phone_60.mkv, frames)]"""
+    global _phone
+    n = sum(m for _, m in segs)
+    def render(i):
+        global _phone
+        if _phone is None: _phone = PhoneClip(os.path.join(CAP, 'android_phone_60.mkv'))
+        j = i
+        for a, m in segs:
+            if j < m: break
+            j -= m
+        f = phone_frame(_phone[a + j])
+        f = label(f, 'ANDROID', x=VW // 2, y=36, size=40, anchor='center', alpha=ease(i / 12) * ease((n - 1 - i) / 12))
+        return caption(f, head, sub, i, n, None, kicker=False)
+    return n, render
+
+
 def scene_montage(clips, per, head, sub):
     n = per * len(clips)
     def render(i):
@@ -186,9 +251,12 @@ def timeline():
         # ---- the rest
         ('plus',        scene_features([('v11_mizrabel', 200, 108), ('v11_rainbow', 300, 108)], S(3.2),
                                        ['Black frame insertion for 120 Hz screens',
-                                        'Add a soundtrack on Android too',
                                         'Level select keeps your soundtrack playing',
-                                        'Achievements on Windows and Android'])),
+                                        'Rewind and save states keep the music in step',
+                                        'Sprite flicker, colour and filter options as before'])),
+        ('android',     scene_phone([(60, 180), (840, 288), (1290, 282)], 'ON ANDROID TOO',
+                                    'Touch controls, achievements, MD+ soundtracks and every widescreen fix\n'
+                                    'The same update for phones and tablets - or plug in a controller')),
         ('others',      scene_montage([('qs_palace', 150, 40, 'qs'), ('woi_garden', 150, 40, 'woi'),
                                        ('qs_hideout', 150, 108, 'qs'), ('woi_sunny', 150, 64, 'woi')], S(2.2),
                                       'QUACKSHOT & WORLD OF ILLUSION',
@@ -200,7 +268,7 @@ def timeline():
 # sound: (first scene of the section, recording, start offset in seconds); 'own' = the scenes' own recordings
 MUSIC = [('title', 'mus_coi_title', 0.0), ('wide_card', 'mus_coi_boss', 0.0), ('hall_ba', 'mus_coi_castle', 0.0),
          ('md_audio', 'mus_md_coi_title', 0.0), ('md_coi', 'own', 0.0), ('cheats_ui', 'mus_coi_toyland', 0.0),
-         ('others', 'mus_qs_duckburg', 0.0), ('end', 'mus_woi_sky', 0.0)]
+         ('android', 'mus_woi_title', 0.0), ('others', 'mus_qs_duckburg', 0.0), ('end', 'mus_woi_sky', 0.0)]
 OWN = {'md_coi': ('v11_md_forest', [(0, 420)]), 'md_qs': ('v11_md_duckburg', [(0, 390)]), 'md_mp': ('v11_mp', MD_MP_SEGS)}
 XFADE = 1.0
 TARGET_RMS = 2300.0
