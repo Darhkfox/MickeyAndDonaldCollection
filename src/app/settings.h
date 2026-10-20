@@ -22,7 +22,8 @@ enum class AudioFilter : int { Off = 0, Model1, Model2, Count };
 
 // Mega Drive pad actions (bindable).
 enum MdAction : int { ACT_UP = 0, ACT_DOWN, ACT_LEFT, ACT_RIGHT, ACT_A, ACT_B, ACT_C, ACT_START, ACT_COUNT };
-enum Hotkey : int { HK_FAST_FORWARD = 0, HK_REWIND, HK_COUNT };   // hold-to-use, for whoever presses them
+// For whoever presses them: fast forward and rewind are held, the others pressed.
+enum Hotkey : int { HK_FAST_FORWARD = 0, HK_REWIND, HK_MENU, HK_SAVE_STATE, HK_LOAD_STATE, HK_SCREENSHOT, HK_COUNT };
 
 struct Settings {
     // Video
@@ -56,7 +57,7 @@ struct Settings {
     uint32_t    pad_buttons[2][ACT_COUNT];
     int         pad_index[2] = {-1, -1};    // -1 = first connected pad (player 1) / second (player 2)
     bool        stick_as_dpad = true;
-    int         hotkey_keys[HK_COUNT];      // fast forward / rewind: a key and a pad button each (0 = none)
+    int         hotkey_keys[HK_COUNT];      // a key and a pad button for each Hotkey (0 = none)
     uint32_t    hotkey_pads[HK_COUNT];
 
     // Hold-to-use speed controls (by default keyboard Tab / R, pad right / left trigger: hotkey_keys / hotkey_pads)

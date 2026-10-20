@@ -109,11 +109,12 @@ void App::open_options_menu(bool from_launcher) {
                                        [this](int v) { settings_.touch_opacity = v; }, [](int v) { return std::to_string(v) + "%"; }));
 #endif
 #ifdef _WIN32   // (keyboard hotkeys: a phone rarely has a keyboard)
-    p.items.push_back(MenuItem::header("Hotkeys"));
-    p.items.push_back(MenuItem::info("Menu", []() { return std::string("Esc / (Back)"); }));
+    p.items.push_back(MenuItem::header("Hotkeys (changed under Controls)"));
+    p.items.push_back(MenuItem::info("Menu", [this]() { return hotkey_text(HK_MENU); }));
+    p.items.push_back(MenuItem::info("Quick save", [this]() { return hotkey_text(HK_SAVE_STATE); }));
+    p.items.push_back(MenuItem::info("Quick load", [this]() { return hotkey_text(HK_LOAD_STATE); }));
+    p.items.push_back(MenuItem::info("Screenshot", [this]() { return hotkey_text(HK_SCREENSHOT); }));
     p.items.push_back(MenuItem::info("Fullscreen", []() { return std::string("F11 / Alt+Enter"); }));
-    p.items.push_back(MenuItem::info("Quick save / load", []() { return std::string("F5 / F9"); }));
-    p.items.push_back(MenuItem::info("Screenshot", []() { return std::string("F12"); }));
 #endif
     p.on_back = [this]() { save_settings(); };
     if (from_launcher) menu_.open(std::move(p));
@@ -308,20 +309,24 @@ MenuPage App::controls_page(int player) {
         it.hint = "Press Enter, then the new key (a key already in use swaps). Esc cancels.";
         p.items.push_back(it);
     }
-    static const char* kHotkeyNames[HK_COUNT] = {"Fast Forward (hold)", "Rewind (hold)"};
+    static const char* kHotkeyNames[HK_COUNT] = {"Fast Forward (hold)", "Rewind (hold)", "Menu", "Quick Save", "Quick Load",
+                                                 "Screenshot"};
+    // (fast forward and rewind are off while achievements are on)
+    auto speed = [](int h) { return h == HK_FAST_FORWARD || h == HK_REWIND; };
     if (player == 0)
         for (int h = 0; h < HK_COUNT; h++) {
             MenuItem it;
             it.kind = MenuItem::Bind;
             it.label = kHotkeyNames[h];
-            it.value_text = [this, h]() {
-                if (settings_.achievements) return std::string("Off (achievements on)");
+            it.value_text = [this, h, speed]() {
+                if (speed(h) && settings_.achievements) return std::string("Off (achievements on)");
                 int vk = settings_.hotkey_keys[h];
                 return vk ? Input::key_name(vk) : std::string("-");
             };
-            it.enabled = [this]() { return !settings_.achievements; };
+            if (speed(h)) it.enabled = [this]() { return !settings_.achievements; };
             it.on_bind = [this, h](int vk, uint32_t) { bind_hotkey_key(h, vk); };
-            it.hint = "Press Enter, then the new key (a key already in use swaps). Esc cancels.";
+            it.hint = h == HK_MENU ? "Press Enter, then the new key (a key already in use swaps). Esc always opens the menu too."
+                                   : "Press Enter, then the new key (a key already in use swaps). Esc cancels.";
             p.items.push_back(it);
         }
     p.items.push_back(MenuItem::header("Gamepad"));
@@ -359,12 +364,12 @@ MenuPage App::controls_page(int player) {
             it.kind = MenuItem::Bind;
             it.bind_pad = true;
             it.label = kHotkeyNames[h];
-            it.value_text = [this, h]() {
-                if (settings_.achievements) return std::string("Off (achievements on)");
+            it.value_text = [this, h, speed]() {
+                if (speed(h) && settings_.achievements) return std::string("Off (achievements on)");
                 uint32_t b = settings_.hotkey_pads[h];
                 return b ? Input::pad_button_name(b) : std::string("-");
             };
-            it.enabled = [this]() { return !settings_.achievements; };
+            if (speed(h)) it.enabled = [this]() { return !settings_.achievements; };
             it.on_bind = [this, h](int, uint32_t b) { bind_hotkey_pad(h, b); };
             it.hint = "Press Enter / (A), then the new pad button. Esc cancels.";
             p.items.push_back(it);

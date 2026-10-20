@@ -9,7 +9,7 @@
 #include <vector>
 
 static const char* kActionKeys[ACT_COUNT] = {"up", "down", "left", "right", "a", "b", "c", "start"};
-static const char* kHotkeyKeys[HK_COUNT] = {"fast_forward", "rewind"};
+static const char* kHotkeyKeys[HK_COUNT] = {"fast_forward", "rewind", "menu", "quick_save", "quick_load", "screenshot"};
 
 Settings::Settings() { reset_keys(); }
 
@@ -28,6 +28,14 @@ void Settings::reset_keys() {
     hotkey_keys[HK_REWIND] = 'R';
     hotkey_pads[HK_FAST_FORWARD] = PAD_RT;
     hotkey_pads[HK_REWIND] = PAD_LT;
+    hotkey_keys[HK_MENU] = VK_ESCAPE;
+    hotkey_pads[HK_MENU] = PAD_BACK;
+    hotkey_keys[HK_SAVE_STATE] = VK_F5;
+    hotkey_pads[HK_SAVE_STATE] = 0;
+    hotkey_keys[HK_LOAD_STATE] = VK_F9;
+    hotkey_pads[HK_LOAD_STATE] = 0;
+    hotkey_keys[HK_SCREENSHOT] = VK_F12;
+    hotkey_pads[HK_SCREENSHOT] = 0;
 }
 
 int resolve_player_pad(const int pad_index[2], const bool* connected, int slots, int player) {

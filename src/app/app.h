@@ -247,7 +247,9 @@ private:
     uint16_t pad_state(int player);
     bool any_game_button_held();
     bool hold_hotkey(int vk, uint32_t pad_button);
-    std::string hotkey_text(int h) const;     // a hold hotkey's key and pad button, for menus ("Tab / RT")
+    bool hotkey_pressed(int h);               // a press hotkey (menu, quick save / load, screenshot) this frame
+    void hotkey_free(int vk, uint32_t pad_button, bool& key_free, bool& pad_free) const;
+    std::string hotkey_text(int h) const;     // a hotkey's key and pad button, for menus ("Tab / RT")
     void bind_hotkey_key(int h, int vk);           // Controls: a hotkey's new key / pad button (an action or the other
     void bind_hotkey_pad(int h, uint32_t button);  // hotkey that had it gets the old one)
     void rewind_step(double dt);

@@ -66,7 +66,7 @@ UiInput App::poll_ui(float dt) {
         if (p.buttons & (PAD_RIGHT | PAD_LS_RIGHT)) dir[3] = true;
         if (p.pressed & PAD_A) u.confirm = true;
         if (p.pressed & PAD_B) u.back = true;
-        if (p.pressed & (PAD_BACK | PAD_GUIDE)) u.menu = true;
+        if (p.pressed & PAD_GUIDE) u.menu = true;   // (the Menu pad button: hotkey_pressed below)
         if (p.pressed & PAD_LB) u.page_left = true;
         if (p.pressed & PAD_RB) u.page_right = true;
         u.pad_pressed |= p.pressed;
@@ -84,7 +84,8 @@ UiInput App::poll_ui(float dt) {
     }
     bool alt = input_.key_down(VK_MENU);
     if (!alt && (input_.key_pressed(VK_RETURN) || input_.key_pressed(VK_SPACE))) u.confirm = true;
-    if (input_.key_pressed(VK_ESCAPE)) u.menu = true;
+    if (input_.key_pressed(VK_ESCAPE)) u.menu = true;   // (always, whatever the Menu key is)
+    if (hotkey_pressed(HK_MENU)) u.menu = true;
     if (input_.key_pressed(VK_PRIOR)) u.page_left = true;
     if (input_.key_pressed(VK_NEXT)) u.page_right = true;
     u.key_pressed = input_.last_key_pressed();
@@ -152,19 +153,38 @@ std::string App::hotkey_text(int h) const {
     const std::string pad = b ? Input::pad_button_name(b) : std::string();
 #ifdef _WIN32
     const int vk = settings_.hotkey_keys[h];
-    return (vk ? Input::key_name(vk) : std::string("-")) + " / " + (pad.empty() ? std::string("-") : pad);
+    const std::string key = vk ? Input::key_name(vk) : std::string();
+    return key.empty() ? (pad.empty() ? std::string("-") : pad) : pad.empty() ? key : key + " / " + pad;
 #else
     return pad;
 #endif
 }
 
-bool App::hold_hotkey(int vk, uint32_t pad_button) {
-    bool key_free = true, pad_free = true;
+void App::hotkey_free(int vk, uint32_t pad_button, bool& key_free, bool& pad_free) const {
+    key_free = vk != 0;
+    pad_free = pad_button != 0;
     for (int p = 0; p < 2; p++)
         for (int a = 0; a < ACT_COUNT; a++) {
             if (settings_.keys[p][a] == vk) key_free = false;
             if (settings_.pad_buttons[p][a] & pad_button) pad_free = false;
         }
+}
+
+bool App::hotkey_pressed(int h) {
+    const int vk = settings_.hotkey_keys[h];
+    const uint32_t pad_button = settings_.hotkey_pads[h];
+    bool key_free, pad_free;
+    hotkey_free(vk, pad_button, key_free, pad_free);
+    if (key_free && input_.key_pressed(vk)) return true;
+    if (autotest_ || !pad_free) return false;
+    for (int i = 0; i < Input::kMaxPads; i++)
+        if (input_.pad(i).connected && (input_.pad(i).pressed & pad_button)) return true;
+    return false;
+}
+
+bool App::hold_hotkey(int vk, uint32_t pad_button) {
+    bool key_free, pad_free;
+    hotkey_free(vk, pad_button, key_free, pad_free);
     if (key_free && input_.key_down(vk)) return true;
     if (autotest_ || !pad_free) return false;
     for (int i = 0; i < Input::kMaxPads; i++)
@@ -200,7 +220,7 @@ void App::frame(double dt) {
 
     // Global hotkeys
     if (input_.key_pressed(VK_F11)) { settings_.fullscreen = !is_fullscreen_; set_fullscreen(settings_.fullscreen); }
-    if (input_.key_pressed(VK_F12)) screenshot();
+    if (!menu_.capturing() && hotkey_pressed(HK_SCREENSHOT)) screenshot();
     const bool in_play = mode_ == Mode::Playing && session_ && !menu_.active() && !jukebox_.active();
     bool rewind_held = hold_hotkey(settings_.hotkey_keys[HK_REWIND], settings_.hotkey_pads[HK_REWIND]);
     bool ff_held = hold_hotkey(settings_.hotkey_keys[HK_FAST_FORWARD], settings_.hotkey_pads[HK_FAST_FORWARD]);
@@ -286,8 +306,8 @@ void App::frame(double dt) {
         } else if (ui.menu) {
             open_pause_menu();
         } else {
-            if (input_.key_pressed(VK_F5)) quick_save();
-            if (input_.key_pressed(VK_F9)) quick_load();
+            if (hotkey_pressed(HK_SAVE_STATE)) quick_save();
+            if (hotkey_pressed(HK_LOAD_STATE)) quick_load();
             if (block_game_input_ && !any_game_button_held()) block_game_input_ = false;
             if (rewinding_) rewind_step(dt);
             else run_game_frames(frames, true);

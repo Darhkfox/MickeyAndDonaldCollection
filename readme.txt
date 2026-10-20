@@ -141,8 +141,9 @@
      F11 ............ Fullscreen / window (Alt+Enter works too)
      F12 ............ Screenshot         (saved in a "screenshots" folder)
 
-  The fast forward and rewind keys and pad buttons can be changed under
-  Options > Controls (Player 1's page), like the game buttons.
+  The fast forward, rewind, menu, quick save, quick load and screenshot
+  keys and pad buttons can be changed under Options > Controls (Player 1's
+  page), like the game buttons. Esc always opens the menu too.
 
 
 --------------------------------------------------------------------------------
@@ -315,9 +316,10 @@
   CONTROLS  (and CONTROLS - PLAYER 2)
      Keyboard keys and gamepad buttons for each Mega Drive button, and (on
      Player 1's page) for Fast Forward and Rewind (greyed out while
-     achievements are on). Highlight one, press Enter, then the new key or
-     button (one already in use swaps; Esc cancels). Also: Device (which
-     pad), Left Stick Moves (default ON) and Reset to Defaults.
+     achievements are on), Menu, Quick Save, Quick Load and Screenshot.
+     Highlight one, press Enter, then the new key or button (one already in
+     use swaps; Esc cancels). Also: Device (which pad), Left Stick Moves
+     (default ON) and Reset to Defaults.
 
   ACHIEVEMENTS
      Achievements ...... Earn achievements as you play. While this is on,
