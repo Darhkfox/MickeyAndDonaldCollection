@@ -391,10 +391,18 @@ Result per situation (E=40; sweep `t26`, all rounds, all patches + C, camera ove
 |---|---|---|---|
 | level start / end (normal) | all except below | camera range [E, maxX-E]; view stays inside the level | none |
 | boss arena, range < 2E | 04 (160..192), 08 (192), 16 (3456..3520), 1B (192) | camera locked at the centre (176 / 192 / 3488 / 192) | E=40: 04 24+24 px, 08 40+40, 16 8+8, 1B 40+40; E=20: 04 4+4, 08 20+20, 16 0, 1B 20+20 |
-| narrow rooms (512 px wide) | 0C, 1A | range [40,152] | none |
+| narrow rooms (512 px wide) | 0C, 1A | range [40,152] (0C: see below) | none |
 | vertical shafts | 05 (768 px wide), 19 (1024 px) | range [40,408] / [40,664] | none |
 | auto-scroll | none exist | – | – |
 | rotating room | 07 (flip, §7) | – | none |
+
+The Storm's boss room `0C` (port, `coi.cpp` `arena_bounds` / `storm_room_line`): its right 112 px (x 400-511) are
+a solid brick wall; Mickey stops at x 305 (the boss's column) and the 4:3 camera goes 0..137 in play, so the
+original only shows the wall's edge. In widescreen the camera range comes from the room in front of the wall
+(0..80 ± E: 21:9 and 2:1 locked at 40, 16:9 at 40, 16:10 20..60; set at once and the camera moved into it, with
+plane B - half speed here - by half as much; the player clamp keeps the original min X), and on screen columns
+past either end of it (world x < 0 or >= 400, per line) plane A repeats the room 128 px further in (its pattern's
+period), dimmed by the renderer. Mickey's range (16..305) and the 4:3 game are unchanged.
 
 Plane B in streaming mode with parallax slower than plane A (rounds 17/18: B.x = 7/8 A.x; 19/1A: B.x = A.x/4)
 can still show up to 5 px (17/18) or 30 px (19/1A) of plane-B cells outside B's own map at the extreme left

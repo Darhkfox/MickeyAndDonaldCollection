@@ -227,6 +227,18 @@ void round_bounds(const MegaDrive& md, int& lo, int& hi) {
     hi = (int16_t)(uint16_t)((md.ram16(0xFFFA8E) << 4) - 320);
 }
 
+// The Storm's boss room ($0C) is 512 px wide, but its right 112 px are a solid brick wall: Mickey can't get past
+// x 304 and the 4:3 camera (0..136 in play) only ever shows the wall's edge. In widescreen the view keeps to the room
+// in front of the wall, and past either end of it plane A carries on with the room's own pattern (it repeats every
+// 128 px: storm_room_line), dimmed like the other arenas.
+constexpr int STORM_ROOM_W = 400, STORM_PERIOD = 128;
+
+// The camera X range widescreen keeps the view in: the original's, except in the Storm's boss room.
+void arena_bounds(const MegaDrive& md, int& lo, int& hi) {
+    round_bounds(md, lo, hi);
+    if (md.ram16(LEVEL) == 0x0C) hi = STORM_ROOM_W - 320;
+}
+
 // The camera clamp patch adjusts a round's bounds when the round loads. If the widescreen mode
 // changes mid-round (menu, or loading a state made in another mode) bring the live range
 // ($FAA2/$FAA6) to what this mode wants, and keep the saved originals ($FAB0/$FAB2) right. The
@@ -234,7 +246,8 @@ void round_bounds(const MegaDrive& md, int& lo, int& hi) {
 // Returns true once the range is the target one.
 bool sync_camera_bounds(MegaDrive& md, int E) {
     int lo, hi;
-    round_bounds(md, lo, hi);
+    if (E > 0) arena_bounds(md, lo, hi);
+    else round_bounds(md, lo, hi);
     if (hi < lo) return true;
     int tmin = lo + E, tmax = hi - E;
     if (tmin > tmax) tmin = tmax = (lo + hi) / 2;
@@ -242,9 +255,24 @@ bool sync_camera_bounds(MegaDrive& md, int E) {
     int mn = (int16_t)md.ram16(0xFFFAA2), mx = (int16_t)md.ram16(0xFFFAA6);
     mn = mn > tmin ? tmin : std::min(tmin, std::max(mn, cam));
     mx = mx < tmax ? tmax : std::max(tmax, std::min(mx, cam));
+    if (md.ram16(LEVEL) == 0x0C) {
+        // One 512-px plane holds the whole room (nothing to stream): the range is set at once, and the camera moved
+        // into it (plane B, which follows at half speed here, by half as much).
+        mn = tmin;
+        mx = tmax;
+        const int to = std::clamp(cam, mn, mx);
+        if (to != cam) {
+            md.set_ram16(0xFFFA84, (uint16_t)to);
+            md.set_ram16(0xFFFA98, (uint16_t)to);
+            const int b = (int16_t)md.ram16(0xFFFAC4) + (to - cam) / 2;
+            md.set_ram16(0xFFFAC4, (uint16_t)b);
+            md.set_ram16(0xFFFAD8, (uint16_t)b);
+        }
+    }
     md.set_ram16(0xFFFAA2, (uint16_t)mn);
     md.set_ram16(0xFFFAA6, (uint16_t)mx);
-    if (E > 0) {
+    if (E > 0) {   // (the originals: the player's own clamp uses the min)
+        round_bounds(md, lo, hi);
         md.set_ram16(0xFFFAB0, (uint16_t)lo);
         md.set_ram16(0xFFFAB2, (uint16_t)hi);
     }
@@ -397,16 +425,48 @@ void castle_outside_line(const MegaDrive& md, int line, uint8_t* plane_a, uint8_
     }
 }
 
+// The Storm's boss room: on screen columns past either end of the room in front of the wall (world x < 0 or >= 400
+// on this line's scroll), plane A repeats the room 128 px further in. Sprites are left as they are.
+void storm_room_line(const MegaDrive& md, int line, uint8_t* plane_a) {
+    const VDP& v = md.vdp;
+    const int E = v.ext, TW = 320 + 2 * E;
+    const uint32_t hsb = (v.reg[13] & 0x3F) << 10;
+    int hoff;
+    switch (v.reg[11] & 3) {
+    case 0: hoff = 0; break;
+    case 1: hoff = (line & 7) * 4; break;
+    case 2: hoff = (line & ~7) * 4; break;
+    default: hoff = line * 4; break;
+    }
+    const int camx = (int16_t)md.ram16(0xFFFA84);
+    const int px0 = -(v.vram16(hsb + hoff) & 0x3FF) & 0x1FF;
+    const int wx0 = camx + (((px0 - camx) + 256) & 0x1FF) - 256;   // world x of view x 0 (as draw_far_columns)
+    const int nl = std::clamp(E - wx0, 0, TW), r0 = std::clamp(STORM_ROOM_W - wx0 + E, 0, TW);
+    for (int i = 0; i < nl; i++) {
+        int src = i;
+        while (src < nl) src += STORM_PERIOD;
+        if (src < TW) plane_a[i] = plane_a[src];
+    }
+    for (int i = r0; i < TW; i++) {
+        int src = i;
+        while (src >= r0) src -= STORM_PERIOD;
+        if (src >= 0) plane_a[i] = plane_a[src];
+    }
+}
+
 void line_hook(void* host, int line, uint8_t* plane_a, uint8_t* plane_b, uint8_t* sprites) {
     (void)sprites;
     MegaDrive& md = *(MegaDrive*)host;
     if (md.ram16(MODE) == M_HALLWAY) { castle_outside_line(md, line, plane_a, plane_b); return; }
     if (!wide_gameplay(md)) return;
+    const bool storm = md.ram16(LEVEL) == 0x0C && !hud_window(md.vdp, line);
     if (md.vdp.ext > 64 && !hud_window(md.vdp, line)) {
         draw_far_columns(md, line, plane_a, false);
         if (!(md.ram8(0xFF9800) & 1)) draw_far_columns(md, line, plane_b, true);   // plane B streamed too
+        if (storm) storm_room_line(md, line, plane_a);
         return;
     }
+    if (storm) { storm_room_line(md, line, plane_a); return; }
     if (line < 192 || !hud_window(md.vdp, line)) return;
     static std::vector<int16_t> maps[2][2][128];
     bool anchor = md.vdp.hook_flags & 1;
@@ -472,6 +532,9 @@ public:
         const int E = cfg.ext;
         info.gameplay = wide_gameplay(md);
         if (md.module_state[0] && md.ram16(MODE) == M_GAMEPLAY && sync_camera_bounds(md, E)) md.module_state[0] = 0;
+        // (the Storm's boss room: the round load gave the camera the whole map's range; keep it to the room)
+        const bool storm = md.ram16(LEVEL) == 0x0C;
+        if (storm && E > 0 && md.ram16(MODE) == M_GAMEPLAY) sync_camera_bounds(md, E);
         // The castle hallway walk (and round 6's castle outside) is shown wide too: its init draws both 512x512
         // planes whole from a map that wraps seamlessly, the camera only scrolls, and the text banner's rows run
         // the full plane width - every column is real scenery. Nothing to mask.
@@ -483,10 +546,14 @@ public:
         // scenery of the other. (Past both ends: black.)
         int camx = (int16_t)md.ram16(0xFFFA84);
         int lo = (int16_t)md.ram16(0xFFFAB0), hi = (int16_t)md.ram16(0xFFFAB2);
+        if (storm) arena_bounds(md, lo, hi);
         const int out_l = std::clamp(lo + E - camx, 0, E), out_r = std::clamp(camx + E - hi, 0, E);
         const int map_w = md.ram16(0xFFFA8E) * 16;
         const bool past_l = camx - E < 0, past_r = camx + 320 + E > map_w;
-        if ((past_l && past_r) || (past_r && out_l < out_r) || (past_l && out_r < out_l)) {
+        if (storm) {   // (both ends carry on with the room's pattern: storm_room_line)
+            info.dim_left = out_l;
+            info.dim_right = out_r;
+        } else if ((past_l && past_r) || (past_r && out_l < out_r) || (past_l && out_r < out_l)) {
             info.mask_left = out_l;
             info.mask_right = out_r;
         } else {

@@ -482,7 +482,9 @@
 
      Castle of Illusion's boss fights keep the game's locked 4:3 camera, so
      they play exactly as the original; the rest of the room is shown dimmed
-     at the sides (Mickey can't go there). Mickey's walk down the castle
+     at the sides (Mickey can't go there). The Storm's boss room keeps to the
+     part in front of its back wall, the room carrying on dimmed at the
+     sides. Mickey's walk down the castle
      hallway between rounds is shown in widescreen too.
 
      A few things are worth knowing:

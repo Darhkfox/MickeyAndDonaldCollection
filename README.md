@@ -250,7 +250,10 @@ A log line every 5 seconds gives the frame rate and the work per frame (`adb log
 - **Castle of Illusion.** Tile streaming already keeps the whole 512×512 plane valid, so it needs no patch;
   sprites, objects, animated blocks and the camera clamp do. Widescreen applies in the gameplay states
   (`$F300` = `$0E` / `$10`); the HUD lines 192–223 are remapped. Boss arenas keep the game's locked camera;
-  the scenery beside them is dimmed, and a side past the end of the map mirrors the other side. The castle
+  the scenery beside them is dimmed, and a side past the end of the map mirrors the other side. The Storm's
+  boss room (`$0C`, 512 px, its right 112 px a solid wall Mickey never reaches) keeps the view on the room in
+  front of the wall (camera X range 0..80 ± E), and past either end of it plane A repeats the room's 128-px
+  pattern, dimmed. The castle
   hallway (`$22`) is wide as well: its init draws both 512×512 planes whole from a map that wraps seamlessly,
   and the camera only scrolls. Round 6's walk outside the castle (same mode) is one 512-pixel picture the camera
   pans across: left of it the castle's facade is mirrored (it carries on), right of the tower plane A is left out
