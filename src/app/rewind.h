@@ -1,6 +1,7 @@
 // Rewind history: save states taken every few frames, newest first out.
 // The newest state is kept whole; each older one is stored as its XOR difference to the next newer state,
-// with runs of zero bytes compressed away (consecutive states differ in a few KB of a ~200 KB state).
+// with runs of zero bytes compressed away (consecutive states differ in a few KB of a ~200 KB state), or whole
+// when the two differ in size.
 #pragma once
 #include <cstddef>
 #include <cstdint>
@@ -23,6 +24,6 @@ public:
 
 private:
     std::vector<uint8_t> newest_;
-    std::deque<std::vector<uint8_t>> deltas_;   // front = oldest; back = difference between newest_ and the one before
+    std::deque<std::vector<uint8_t>> deltas_;   // front = oldest; back = the one before newest_ (kDelta / kWhole record)
     size_t bytes_ = 0;
 };

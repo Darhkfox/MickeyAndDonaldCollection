@@ -45,9 +45,9 @@ std::vector<uint8_t> encode(const std::vector<uint8_t>& a, const std::vector<uin
     return out;
 }
 
-// state ^= delta (in place)
-void apply_delta(std::vector<uint8_t>& state, const std::vector<uint8_t>& delta) {
-    size_t pos = 0, i = 0;
+// state ^= delta (in place), the delta's records starting at `pos`
+void apply_delta(std::vector<uint8_t>& state, const std::vector<uint8_t>& delta, size_t pos) {
+    size_t i = 0;
     while (pos < delta.size() && i <= state.size()) {
         i += get_varint(delta, pos);
         size_t l = get_varint(delta, pos);
@@ -55,6 +55,7 @@ void apply_delta(std::vector<uint8_t>& state, const std::vector<uint8_t>& delta)
     }
 }
 
+constexpr uint8_t kDelta = 0, kWhole = 1;   // the first byte of each older state's record
 }  // namespace
 
 void RewindBuffer::clear() {
@@ -64,9 +65,17 @@ void RewindBuffer::clear() {
 }
 
 void RewindBuffer::push(const std::vector<uint8_t>& state) {
-    if (!newest_.empty() && newest_.size() != state.size()) clear();   // another game / format
     if (!newest_.empty()) {
-        deltas_.push_back(encode(newest_, state));
+        // The state before this one: its difference to it, or the whole state when their sizes differ (a save
+        // state's size can change within a game: an MD+ soundtrack's position is part of it as text).
+        std::vector<uint8_t> rec(1, newest_.size() == state.size() ? kDelta : kWhole);
+        if (rec[0] == kDelta) {
+            const std::vector<uint8_t> d = encode(newest_, state);
+            rec.insert(rec.end(), d.begin(), d.end());
+        } else {
+            rec.insert(rec.end(), newest_.begin(), newest_.end());
+        }
+        deltas_.push_back(std::move(rec));
         bytes_ += deltas_.back().size();
     }
     newest_ = state;
@@ -82,8 +91,10 @@ bool RewindBuffer::pop(std::vector<uint8_t>& state) {
     if (deltas_.empty()) {
         newest_.clear();
     } else {
-        apply_delta(newest_, deltas_.back());
-        bytes_ -= deltas_.back().size();
+        const std::vector<uint8_t>& rec = deltas_.back();
+        if (rec[0] == kWhole) newest_.assign(rec.begin() + 1, rec.end());
+        else apply_delta(newest_, rec, 1);
+        bytes_ -= rec.size();
         deltas_.pop_back();
     }
     return true;

@@ -236,7 +236,9 @@ void Jukebox::draw(Video& v, float time, uint32_t accent) {
     }
     if (versions_.size() > 1) {
         // which version of the music plays: the game's own, or an MD+ soundtrack
-        const std::string vt = ver_ == 0 ? std::string("Original music") : "MD+  " + soundtrack_label(versions_[ver_].pack.name);
+        const std::string label = ver_ == 0 ? std::string() : soundtrack_label(versions_[ver_].pack.name);
+        const std::string vt = ver_ == 0 ? std::string("Original music")
+                               : label.find("MD+") == std::string::npos ? "MD+  " + label : label;
         const char* key = touch_ui ? "Tap to change" : "Tab / (Y)";
         const float y = pad * 0.9f + v.line_height(FontId::Small) * 1.7f;
         const float vw = v.measure_text(FontId::Body, vt), kw = v.measure_text(FontId::Small, key);
