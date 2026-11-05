@@ -92,6 +92,9 @@ if hasattr(_dll, 'mdt_debug_layers'):
     _dll.mdt_debug_layers.argtypes = [C.c_void_p, C.c_int]
 if hasattr(_dll, 'mdt_view'):
     _dll.mdt_view.argtypes = [C.c_void_p, C.POINTER(C.c_int)]
+if hasattr(_dll, 'mdt_sub_frame'):
+    _dll.mdt_set_sub_frames.argtypes = [C.c_void_p, C.c_int]
+    _dll.mdt_sub_frame.argtypes = [C.c_void_p, C.c_int, C.c_void_p, C.c_void_p, C.c_void_p]
 if hasattr(_dll, 'mdt_view_b'):
     _dll.mdt_view_b.argtypes = [C.c_void_p, C.POINTER(C.c_int)]
     _dll.mdt_frame_raw.argtypes = [C.c_void_p, C.c_void_p, C.c_void_p, C.c_void_p]
@@ -259,6 +262,18 @@ class MD:
         _dll.mdt_frame(self.h, None, C.byref(w), C.byref(h))
         buf = (C.c_uint32 * (w.value * h.value))()
         _dll.mdt_frame(self.h, buf, C.byref(w), C.byref(h))
+        return w.value, h.value, list(buf)
+
+    def set_sub_frames(self, k):
+        """high frame rate: K-1 in-between pictures drawn with each frame (1 = off)"""
+        _dll.mdt_set_sub_frames(self.h, k)
+
+    def sub_pixels(self, k):
+        """in-between picture k (1 .. K-1; 0 = the frame itself) as 0xAARRGGBB pixels"""
+        w = C.c_int(); h = C.c_int()
+        _dll.mdt_sub_frame(self.h, k, None, C.byref(w), C.byref(h))
+        buf = (C.c_uint32 * (w.value * h.value))()
+        _dll.mdt_sub_frame(self.h, k, buf, C.byref(w), C.byref(h))
         return w.value, h.value, list(buf)
 
     # ---- analysis ----

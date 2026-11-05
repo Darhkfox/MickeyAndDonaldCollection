@@ -1,5 +1,5 @@
 ================================================================================
-  MICKEY & DONALD COLLECTION  --  PC Edition V1.1 - 16th Oct 26
+  MICKEY & DONALD COLLECTION  --  PC Edition V1.2 - 5th Nov 26
 ================================================================================
 
   A custom PC port of three Sega Mega Drive / Genesis classics, with a
@@ -283,6 +283,17 @@
      Filter ............ Nearest (sharp), Sharp bilinear, Bilinear
                          (smooth), Scanlines or CRT.
                                                 (default: Sharp bilinear)
+     Slang Shader ...... A RetroArch slang shader preset instead of the
+                         filter, for a richer CRT look: crt-royale,
+                         crt-geom, crt-lottes, crt-easymode, crt-aperture,
+                         crt-pi and zfast-crt are included, in the
+                         "shaders" folder. Any other .slangp preset you put
+                         there (with its files, e.g. from the libretro
+                         slang-shaders collection) shows up in the list too.
+                         Some presets were made for a 4:3 picture and can
+                         stretch or frame oddly in widescreen; crt-royale
+                         needs a fairly fast graphics card. Needs
+                         librashader.dll next to the game.  (default: Off)
      VSync ............. Sync to the monitor's refresh rate. (default: ON)
      Black Frame Insertion  Sharper motion, like a CRT: each game frame is
                          followed by a black one. Needs V-Sync and the
@@ -292,6 +303,17 @@
                          picture gets darker, so you may want to turn your
                          screen's brightness up. Next to the switch: the
                          rate in use, or what's missing.  (default: OFF)
+     High Frame Rate ... Smoother motion on 100 Hz and faster screens: the
+                         refreshes between the games' 60 frames show
+                         in-between pictures, with the scrolling and the
+                         sprites part of the way. The games still run at
+                         60 frames a second, so nothing about how they play
+                         changes; the picture is one frame later. With
+                         V-Sync off (G-SYNC / FreeSync) the pictures come at
+                         the screen's own rate. Not together with Black
+                         Frame Insertion. Next to the switch: the rate and
+                         how many in-between pictures, or what's missing.
+                                                         (default: OFF)
      Remove Sprite Flicker .. Lifts the console's limit on sprites per line,
                          so busy scenes don't flicker.   (default: ON)
      Show FPS .......... Frame rate in the corner.       (default: OFF)
@@ -501,6 +523,9 @@
          with Donald falling or stuck.
        - At 21:9, QuackShot's 512-pixel boss rooms are narrower than the
          screen, so they show bars of 12 pixels at each side.
+       - At 2:1 and 21:9, Castle of Illusion's Dessert Land can run short of
+         object slots, so a chocolate cake block can occasionally be missing
+         until you scroll away and back. The act can still be finished.
        - World of Illusion keeps its original camera and slides the picture
          near the level edges instead: for the first stretch of a level the
          scenery holds still while you walk, then scrolls normally.
@@ -542,6 +567,12 @@
      FreeSync off for the game) and close anything heavy running alongside.
      Some people see a 60 Hz flicker with it, as with a CRT -- if it
      bothers you, switch it off.
+
+  "Shader ... not loaded"
+     The preset couldn't be found or compiled (some need a newer graphics
+     card, or files the preset refers to are missing next to it). The game
+     goes back to the built-in filter. Slang shaders need librashader.dll in
+     the game's folder.
 
   A gamepad doesn't work
      Check Options > Controls > Device: it lists the connected controllers.

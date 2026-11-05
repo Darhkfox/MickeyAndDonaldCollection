@@ -90,6 +90,17 @@ public:
     void render_line(int ln);   // render scanline into framebuffer
     void blank_line(int ln);    // output backdrop colour (display disabled)
 
+    // ---- high frame rate: in-between pictures ------------------------------------
+    // With sub_frames = K > 1 every line is also drawn into sub_fb[k-1] (k = 1 .. K-1), k/K of the way from the last
+    // frame to this one: each plane's scroll part of the way back to the last frame's on that line (a jump of more
+    // than 32 px, a cut, isn't), the sprites part of the way back to where they were (matched by their look, see
+    // sprite_moves), the module's line hook run as for the frame itself. Shown on a 120+ Hz display between the
+    // game's frames (a frame late: what lies between two frames is known once the second is drawn).
+    static constexpr int kMaxSubFrames = 4;
+    int sub_frames = 1;
+    uint16_t sub_fb[kMaxSubFrames - 1][kMaxLines][kMaxWidth];
+    void hfr_forget();          // nothing in between with the last frame (a state loaded, a reset)
+
     int  active_width() const { return (reg[12] & 0x81) ? 320 : 256; }
     int  active_lines() const { return (reg[1] & 0x08) ? 240 : 224; }
     bool h40() const { return (reg[12] & 0x81) != 0; }
@@ -141,4 +152,25 @@ private:
     void render_sprites(uint8_t* dst, int ln);
     uint8_t spr_hud_[kMaxWidth];
     int  dma_rate_bytes() const;
+
+    void window_span(int ln, int* ws, int* we) const;
+    void draw_plane_a(uint8_t* la, int ln, int x0, int x1, int ws, int we);
+    void compose(uint16_t* out, const uint8_t* la, const uint8_t* lb, const uint8_t* ls, int TW);
+    int  line_hscroll(int ln, bool plane_b) const;
+    int  line_vscroll(bool plane_b) const;
+
+    // high frame rate state (see sub_frames)
+    static constexpr int kSat = 80;
+    bool    sub_ = false;                    // an in-between line is being drawn
+    int     sub_vs_[2] = {};                 // ...with this much added to each plane's V scroll
+    int16_t spr_sub_dx_[kSat] = {}, spr_sub_dy_[kSat] = {};   // ...and the sprites moved this far
+    int     hfr_cur_ = 0;                    // which half of the line records is this frame's
+    int16_t hfr_h_[2][2][kMaxLines] = {};    // [frame][plane] each line's H scroll as drawn (scroll - view shift)
+    int16_t hfr_v_[2][2][kMaxLines] = {};    // [frame][plane] each line's V scroll
+    uint8_t hfr_ok_[2][kMaxLines] = {};      // the line was drawn with the display on
+    struct SprRec { int16_t x = 0, y = 0; uint32_t key = 0; bool on = false; };
+    SprRec  spr_prev_[kSat], spr_prev2_[kSat];   // the sprites last frame, and the frame before (flicker)
+    int16_t spr_dx_[kSat] = {}, spr_dy_[kSat] = {};   // their moves since the last frame
+    void sprite_moves();
+    void render_sub_line(int ln, int k, int subs);
 };

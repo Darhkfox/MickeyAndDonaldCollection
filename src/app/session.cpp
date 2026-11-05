@@ -117,8 +117,9 @@ void Session::run_frame(uint16_t pad1, uint16_t pad2) {
     if (pending_) try_switch();
 }
 
-const uint32_t* Session::frame(int& w, int& h) {
+const uint32_t* Session::frame(int& w, int& h, int sub) {
     const VDP& v = md_->vdp;
+    if (sub < 0 || sub >= std::min(v.sub_frames, VDP::kMaxSubFrames)) sub = 0;
     w = v.fb_width;
     h = v.fb_lines;
     pixels_.resize((size_t)w * h);
@@ -128,7 +129,7 @@ const uint32_t* Session::frame(int& w, int& h) {
         return 0xFF000000u | ((((c >> 16) & 0xFF) * 102 >> 8) << 16) | ((((c >> 8) & 0xFF) * 102 >> 8) << 8) | ((c & 0xFF) * 102 >> 8);
     };
     for (int y = 0; y < h; y++) {
-        const uint16_t* src = v.fb[y];
+        const uint16_t* src = sub ? v.sub_fb[sub - 1][y] : v.fb[y];
         uint32_t* dst = &pixels_[(size_t)y * w];
         for (int x = 0; x < w; x++) dst[x] = lut_[src[x] & 0x7FF];
         if ((dim_l_ || dim_r_) && (mask_lines_ == 0 || y < mask_lines_)) {

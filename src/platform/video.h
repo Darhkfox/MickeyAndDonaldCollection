@@ -47,6 +47,12 @@ public:
     // (normally the uploaded size). `alpha` fades it, `dim` darkens (0..1).
     void draw_game(int slot, Rect dst, ScaleFilter filter, float alpha = 1.0f, float dim = 0.0f);
 
+    // ---- RetroArch slang shader presets (Windows, librashader.dll) ---------
+    // A preset (.slangp) draws the main game picture (slot 0) in place of `filter`; empty path = off.
+    bool slang_available();                                         // librashader.dll found
+    bool set_slang(const std::wstring& path, std::string* error);   // false (and why): the old preset stays
+    bool slang_active() const;
+
     void fill_rect(Rect r, uint32_t color);
     void fill_rect_gradient(Rect r, uint32_t top, uint32_t bottom);
     void fill_round_rect(Rect r, float radius, uint32_t color);   // anti-aliased edges

@@ -125,7 +125,7 @@ int App::run(HINSTANCE inst, int show) {
             // Software pacing when not synchronised to the display (fast forward too: it runs more game frames
             // per displayed frame, not more displayed frames).
             LARGE_INTEGER t;
-            double target = 1.0 / kEmuFps;
+            double target = 1.0 / (kEmuFps * hfr_subs_);   // (high frame rate: a pass per picture, see frame())
             for (;;) {
                 QueryPerformanceCounter(&t);
                 double el = (double)(t.QuadPart - last.QuadPart) / freq.QuadPart;
@@ -389,4 +389,80 @@ void App::start_recording(const std::string& name) {
 }
 
 double App::refresh_rate() { return test_refresh_ > 0 ? test_refresh_ : display_refresh(hwnd_); }
+
+// ---------------------------------------------------------------------------
+// Slang shader presets
+// ---------------------------------------------------------------------------
+void App::apply_slang() {
+    std::wstring full = from_utf8(settings_.slang_preset);
+    if (!full.empty() && !(full.size() > 1 && (full[1] == L':' || full[0] == L'\\'))) full = path_join(exe_dir(), full);
+    if (full == slang_loaded_) return;
+    std::string err;
+    const bool exists = full.empty() || GetFileAttributesW(full.c_str()) != INVALID_FILE_ATTRIBUTES;
+    if (exists && video_.set_slang(full, &err)) {
+        slang_loaded_ = full;
+        return;
+    }
+    // (librashader's own errors are long: a short reason here)
+    std::string why = !exists ? "file not found"
+                      : err.find("librashader.dll") != std::string::npos ? err
+                      : "it couldn't be compiled";
+    menu_.toast("Shader " + to_utf8(file_name(full)) + " not loaded: " + why, 4.0f);
+    settings_.slang_preset.clear();
+    video_.set_slang(L"", nullptr);
+    slang_loaded_.clear();
+}
+
+// The slang presets found under the 'shaders' folder next to the exe (the bundled ones, or e.g. the libretro
+// slang-shaders collection), grouped by folder, and Off.
+MenuPage App::slang_page() {
+    MenuPage p;
+    p.title = "Slang Shader";
+    auto pick = [this](std::string rel) {
+        settings_.slang_preset = rel;
+        apply_slang();
+        save_settings();
+        menu_.pop();
+    };
+    p.items.push_back(MenuItem::action("Off (the built-in filter)", [pick]() { pick(""); }));
+    if (!video_.slang_available()) {
+        p.items.push_back(MenuItem::info("librashader.dll not found",
+                                         []() { return std::string("it goes next to DisneyClassics.exe"); }));
+        return p;
+    }
+    // (every .slangp under shaders\, depth first; paths relative to the exe's folder)
+    std::vector<std::wstring> found;
+    std::vector<std::wstring> stack = {L"shaders"};
+    while (!stack.empty()) {
+        std::wstring rel = stack.back();
+        stack.pop_back();
+        std::vector<DirEntry> es;
+        if (!list_dir(path_join(exe_dir(), rel), es)) continue;
+        for (const DirEntry& e : es) {
+            std::wstring r = rel + L"\\" + e.name;
+            if (e.is_dir) stack.push_back(r);
+            else if (e.name.size() > 7 && _wcsicmp(e.name.c_str() + e.name.size() - 7, L".slangp") == 0) found.push_back(r);
+        }
+    }
+    if (found.empty()) {
+        p.items.push_back(MenuItem::info("No presets found", []() { return std::string("put .slangp presets in 'shaders'"); }));
+        return p;
+    }
+    std::sort(found.begin(), found.end());
+    std::wstring last_dir = L"?";
+    for (const std::wstring& f : found) {
+        const size_t cut = f.find_last_of(L'\\');
+        const std::wstring dir = f.substr(0, cut), name = f.substr(cut + 1, f.size() - cut - 1 - 7);
+        if (dir != last_dir) {
+            p.items.push_back(MenuItem::header(dir == L"shaders" ? "shaders" : to_utf8(dir.substr(8))));
+            last_dir = dir;
+        }
+        const std::string rel = to_utf8(f);
+        MenuItem it = MenuItem::action(to_utf8(name), [pick, rel]() { pick(rel); },
+                                       "Some presets were made for a 4:3 picture and can stretch or frame oddly in widescreen.");
+        it.value_text = [this, rel]() { return rel == settings_.slang_preset ? std::string("Active") : std::string(); };
+        p.items.push_back(it);
+    }
+    return p;
+}
 

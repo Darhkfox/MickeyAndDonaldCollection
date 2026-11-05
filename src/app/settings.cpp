@@ -132,6 +132,8 @@ bool Settings::load(const std::wstring& path) {
             else if (k == "hud_anchor") hud_anchor = iv != 0;
             else if (k == "show_fps") show_fps = iv != 0;
             else if (k == "black_frames") black_frames = iv != 0;
+            else if (k == "high_frame_rate") high_frame_rate = iv != 0;
+            else if (k == "slang_preset") slang_preset = v;
         } else if (section == "audio") {
             if (k == "volume") volume = clampi(iv, 0, 100);
             else if (k == "music_volume") music_volume = clampi(iv, 0, 100);
@@ -173,7 +175,8 @@ bool Settings::save(const std::wstring& path) const {
       << "\nfilter=" << filter << "\nwidescreen=" << (int)widescreen << "\naspect=" << (int)aspect
       << "\ninteger_scale=" << integer_scale << "\ncolor=" << (int)color << "\nbrightness=" << brightness
       << "\nsaturation=" << saturation << "\ngamma=" << gamma << "\nno_sprite_limit=" << no_sprite_limit
-      << "\nhud_anchor=" << hud_anchor << "\nshow_fps=" << show_fps << "\nblack_frames=" << black_frames << "\n\n[audio]\n"
+      << "\nhud_anchor=" << hud_anchor << "\nshow_fps=" << show_fps << "\nblack_frames=" << black_frames
+      << "\nhigh_frame_rate=" << high_frame_rate << "\nslang_preset=" << slang_preset << "\n\n[audio]\n"
       << "volume=" << volume << "\nmusic_volume=" << music_volume << "\nfilter=" << (int)audio_filter
       << "\nladder_effect=" << ladder_effect << "\nsoundtrack_volume=" << soundtrack_volume << "\n";
     for (const auto& kv : soundtrack)

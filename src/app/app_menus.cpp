@@ -188,10 +188,23 @@ MenuPage App::video_page() {
                                        [this]() { return (int)settings_.aspect; }, [this](int v) { settings_.aspect = (AspectMode)v; }));
     p.items.push_back(MenuItem::toggle("Integer Scaling", [this]() { return settings_.integer_scale; },
                                        [this](bool v) { settings_.integer_scale = v; }, "Scale only by whole numbers for perfectly even pixels."));
-    p.items.push_back(MenuItem::choice("Filter", {"Nearest (sharp)", "Sharp bilinear", "Bilinear (smooth)", "Scanlines", "CRT"},
-                                       [this]() { return settings_.filter; }, [this](int v) { settings_.filter = v; }));
+    MenuItem filter = MenuItem::choice("Filter", {"Nearest (sharp)", "Sharp bilinear", "Bilinear (smooth)", "Scanlines", "CRT"},
+                                       [this]() { return settings_.filter; }, [this](int v) { settings_.filter = v; });
 #ifdef _WIN32
+    filter.enabled = [this]() { return settings_.slang_preset.empty(); };   // (a slang shader draws instead)
+    p.items.push_back(filter);
+    MenuItem slang = MenuItem::action("Slang Shader", [this]() { menu_.push(slang_page()); },
+                                      "RetroArch slang shader presets (.slangp) from the 'shaders' folder next to the game, "
+                                      "in place of the filter above.");
+    slang.value_text = [this]() {
+        if (settings_.slang_preset.empty()) return std::string("Off");
+        std::string n = settings_.slang_preset.substr(settings_.slang_preset.find_last_of("\\/") + 1);
+        return n.size() > 7 ? n.substr(0, n.size() - 7) : n;
+    };
+    p.items.push_back(slang);
     p.items.push_back(MenuItem::toggle("VSync", [this]() { return settings_.vsync; }, [this, changed](bool v) { settings_.vsync = v; changed(); }));
+#else
+    p.items.push_back(filter);
 #endif
     MenuItem bfi = MenuItem::toggle("Black Frame Insertion", [this]() { return settings_.black_frames; }, [this](bool v) {
         settings_.black_frames = v;
@@ -201,6 +214,15 @@ MenuPage App::video_page() {
     }, "Sharper motion: a black frame between the game's frames, like a CRT. Needs a 120 Hz screen; the picture gets darker.");
     bfi.value_text = [this]() { return black_frames_note(); };
     p.items.push_back(bfi);
+#ifdef _WIN32
+    MenuItem hfr = MenuItem::toggle("High Frame Rate", [this]() { return settings_.high_frame_rate; },
+                                    [this](bool v) { settings_.high_frame_rate = v; },
+                                    "Smoother motion on 100 Hz and faster screens: the refreshes between the game's 60 frames "
+                                    "show in-between pictures (scrolling and sprites part of the way). The game still runs at "
+                                    "60; the picture is one frame later. Not with Black Frame Insertion.");
+    hfr.value_text = [this]() { return high_frame_rate_note(); };
+    p.items.push_back(hfr);
+#endif
     p.items.push_back(MenuItem::toggle("Remove Sprite Flicker", [this]() { return settings_.no_sprite_limit; },
                                        [this, changed](bool v) { settings_.no_sprite_limit = v; changed(); },
                                        "Lifts the hardware limit on sprites per line."));

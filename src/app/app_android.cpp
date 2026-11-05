@@ -249,6 +249,9 @@ void App::resize_window_to_scale() {}
 void App::move_to_monitor(int) {}
 // The rate the display really runs the app at (phones change it on their own: 120 Hz, 60 Hz when asked, ...):
 // the median of the last 48 frame intervals, or the display mode's rate until there are enough.
+void App::apply_slang() {}   // (slang presets: Windows only)
+MenuPage App::slang_page() { return MenuPage(); }
+
 double App::refresh_rate() {
     if (refresh_n_ >= 48) {
         float d[48];

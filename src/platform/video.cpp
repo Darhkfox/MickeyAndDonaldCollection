@@ -17,6 +17,7 @@
 #include <numeric>
 #include <vector>
 #include "video.h"
+#include "slang.h"
 
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dxgi.lib")
@@ -184,6 +185,9 @@ struct Video::Impl {
     bool vsync = true, tearing = false, in_frame = false, fonts_dirty = true;
     UINT sc_flags = 0;
     ULONGLONG next_recover = 0;
+    SlangChain slang;            // a slang shader preset in place of the built-in filters (see set_slang)
+    std::wstring slang_path;     // its file, reloaded after a device loss
+    unsigned slang_frame = 0;    // the presets' FrameCount
 
     ID3D11Device* dev = nullptr;
     ID3D11DeviceContext* ctx = nullptr;
@@ -377,6 +381,7 @@ struct Video::Impl {
     }
 
     void release_device_objects() {
+        slang.release();
         if (ctx) { ctx->ClearState(); ctx->Flush(); }
         for (auto& s : slots) { release(s.srv); release(s.tex); s.tw = s.th = 0; }
         release(atlas_srv); release(atlas);
@@ -394,6 +399,7 @@ struct Video::Impl {
         if (!create_device_objects()) { next_recover = GetTickCount64() + 1000; return false; }
         for (int i = 0; i < 4; i++) if (!slots[i].cpu.empty()) upload_slot(i);
         if (!atlas_cpu.empty()) create_atlas_texture();
+        if (!slang_path.empty() && !slang.load(dev, slang_path, nullptr)) slang_path.clear();
         return true;
     }
     bool device_lost(HRESULT hr) const { return hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET; }
@@ -726,6 +732,19 @@ void Video::draw_game(int slot, Rect dst, ScaleFilter filter, float alpha, float
     int f = (int)filter;
     if (!s.srv || f < 0 || f >= (int)ScaleFilter::Count || alpha <= 0) return;
     I.flush();
+    if (slot == 0 && alpha >= 0.999f && I.slang.active()) {
+        // A slang preset: its own passes from the game picture into the same rectangle, then this layer's state
+        // back (the chain sets its own); dimming as a dark layer over it. (Fading pictures keep the built-in filter.)
+        I.slang.draw(I.ctx, s.tex, s.w, s.h, I.rtv, dst.x, dst.y, dst.w, dst.h, I.slang_frame++);
+        I.ctx->OMSetRenderTargets(1, &I.rtv, nullptr);
+        D3D11_VIEWPORT vp = { 0, 0, (float)I.w, (float)I.h, 0, 1 };
+        I.ctx->RSSetViewports(1, &vp);
+        I.ctx->RSSetState(I.rast);
+        float bf[4] = { 0, 0, 0, 0 };
+        I.ctx->OMSetBlendState(I.blend, bf, 0xFFFFFFFF);
+        if (dim > 0) fill_rect(dst, (uint32_t)(std::min(dim, 1.0f) * 255.0f + 0.5f) << 24);
+        return;
+    }
     GameCB cb;
     cb.dst[0] = dst.x / I.w * 2 - 1;           cb.dst[1] = 1 - dst.y / I.h * 2;
     cb.dst[2] = (dst.x + dst.w) / I.w * 2 - 1; cb.dst[3] = 1 - (dst.y + dst.h) / I.h * 2;
@@ -747,6 +766,19 @@ void Video::draw_game(int slot, Rect dst, ScaleFilter filter, float alpha, float
     I.ctx->PSSetShaderResources(0, 1, &s.srv);
     I.ctx->PSSetSamplers(0, 2, I.samp);
     I.ctx->Draw(4, 0);
+}
+
+bool Video::slang_available() { return impl->slang.available(); }
+bool Video::slang_active() const { return impl->slang.active(); }
+
+bool Video::set_slang(const std::wstring& path, std::string* error) {
+    Impl& I = *impl;
+    if (path.empty()) { I.slang.release(); I.slang_path.clear(); return true; }
+    if (!I.dev) { if (error) *error = "no display device"; return false; }
+    I.flush();
+    if (!I.slang.load(I.dev, path, error)) return false;
+    I.slang_path = path;
+    return true;
 }
 
 void Video::fill_rect(Rect r, uint32_t color) { fill_rect_gradient(r, color, color); }

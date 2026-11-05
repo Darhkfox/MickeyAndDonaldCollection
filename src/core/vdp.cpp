@@ -2,6 +2,9 @@
 #include "vdp.h"
 #include <cstring>
 #include <algorithm>
+#include <cmath>
+#include <cstdlib>
+#include <vector>
 
 // CRAM is stored internally as BGR333 (9 bits).
 static inline uint16_t cram_pack(uint16_t v) {
@@ -26,6 +29,12 @@ void VDP::reset() {
     hv_latched = false;
     dot_overflow_prev = false;
     dma_busy_until = 0;
+    hfr_forget();
+}
+
+void VDP::hfr_forget() {
+    memset(hfr_ok_, 0, sizeof(hfr_ok_));
+    for (int i = 0; i < kSat; i++) { spr_prev_[i].on = spr_prev2_[i].on = false; spr_dx_[i] = spr_dy_[i] = 0; }
 }
 
 // ---------------------------------------------------------------------------
@@ -272,14 +281,15 @@ void VDP::render_plane(uint8_t* dst, int ln, bool plane_b, int x0, int x1) {
     bool col_vs = (reg[11] & 4) != 0;
     int ncols = active_width() / 16;
     int wmask = cw * 8 - 1, hmask = ch * 8 - 1;
-    int vs = vsram[plane_b ? 1 : 0] & 0x3FF;
+    const int vadd = sub_ ? sub_vs_[plane_b ? 1 : 0] : 0;   // (an in-between line: part of the way back)
+    int vs = (vsram[plane_b ? 1 : 0] + vadd) & 0x3FF;
     int last_key = -1;
     uint8_t row[8] = {};
     for (int x = x0; x < x1; x++) {
         if (col_vs) {
             int col = x >> 4;
             if (col < 0) col = 0; else if (col >= ncols) col = ncols - 1;
-            vs = vsram[col * 2 + (plane_b ? 1 : 0)] & 0x3FF;
+            vs = (vsram[col * 2 + (plane_b ? 1 : 0)] + vadd) & 0x3FF;
         }
         int py = (ln + vs) & hmask;
         int px = (x - hs) & wmask;
@@ -331,6 +341,7 @@ void VDP::render_sprites(uint8_t* dst, int ln) {
         int link = vram[(base + 3) & 0xFFFF] & 0x7F;
         int hcells = ((size >> 2) & 3) + 1, vcells = (size & 3) + 1;
         int sy = y - 128;
+        if (sub_ && idx < kSat) sy += spr_sub_dy_[idx];
         if (ln >= sy && ln < sy + vcells * 8) {
             if (count >= max_line) { sprite_overflow = true; break; }
             count++;
@@ -344,6 +355,7 @@ void VDP::render_sprites(uint8_t* dst, int ln) {
             dots += width;
             if (!masked && draw_w > 0) {
                 int sx = x - 128;
+                if (sub_ && idx < kSat) sx += spr_sub_dx_[idx];
                 if (sprite_xoff) sx += sprite_xoff(hook_host, idx, attr, x, y);
                 uint8_t hud = sprite_is_hud && sprite_is_hud(hook_host, idx) ? 1 : 0;
                 int row = ln - sy;
@@ -387,38 +399,60 @@ void VDP::blank_line(int ln) {
     for (int i = 0; i < TW; i++) fb[ln][i] = bg;
 }
 
+// The window's span on a line: screen x in [ws, we) (empty if ws >= we).
+void VDP::window_span(int ln, int* ws, int* we) const {
+    const int W = active_width();
+    *ws = 0; *we = 0;
+    int wvp = (reg[18] & 0x1F) * 8;
+    bool vwin = (reg[18] & 0x80) ? (ln >= wvp) : (ln < wvp);
+    if (vwin) { *ws = -ext; *we = W + ext; }
+    else {
+        int hp = (reg[17] & 0x1F) * 16;
+        if (reg[17] & 0x80) { if (hp < W) { *ws = hp; *we = W + ext; } }
+        else if (hp > 0) { *ws = -ext; *we = hp >= W ? W + ext : hp; }
+    }
+}
+
+// Plane A with the window over it, screen x in [x0, x1) into la (la[0] = x0).
+void VDP::draw_plane_a(uint8_t* la, int ln, int x0, int x1, int ws, int we) {
+    const int vs = view_shift;
+    if (ws >= we) render_plane(la, ln, false, x0 + vs, x1 + vs);
+    else if (vs != 0) {
+        render_plane(la, ln, false, x0 + vs, x1 + vs);   // shifted plane, window stays put
+        render_window(la + (ws - x0), ln, ws, we);
+    } else {
+        if (ws > x0) render_plane(la, ln, false, x0, ws);
+        render_window(la + (ws - x0), ln, ws, we);
+        if (we < x1) render_plane(la + (we - x0), ln, false, we, x1);
+    }
+}
+
 void VDP::render_line(int ln) {
     if (ln < 0 || ln >= kMaxLines) return;
-    if (!display_enabled()) { blank_line(ln); return; }
+    const int subs = sub_frames < 1 ? 1 : sub_frames > kMaxSubFrames ? kMaxSubFrames : sub_frames;
+    if (subs > 1 && ln == 0) {   // a new frame: its line records, and the sprites' moves since the last
+        hfr_cur_ ^= 1;
+        sprite_moves();
+    }
+    if (!display_enabled()) {
+        blank_line(ln);
+        if (subs > 1) {
+            hfr_ok_[hfr_cur_][ln] = 0;
+            for (int k = 1; k < subs; k++) memcpy(sub_fb[k - 1][ln], fb[ln], (size_t)fb_width * 2);
+        }
+        return;
+    }
     const int W = active_width();
     const int TW = W + 2 * ext;
     fb_width = TW;
     fb_lines = active_lines();
 
     uint8_t la[kMaxWidth], lb[kMaxWidth], ls[kMaxWidth];
-    const int vs = view_shift;
-    const int vsb = view_shift_b_on ? view_shift_b[ln] : vs;
+    const int vsb = view_shift_b_on ? view_shift_b[ln] : view_shift;
     render_plane(lb, ln, true, -ext + vsb, W + ext + vsb);
-
-    // Window / plane A split
-    int ws = 0, we = 0;
-    int wvp = (reg[18] & 0x1F) * 8;
-    bool vwin = (reg[18] & 0x80) ? (ln >= wvp) : (ln < wvp);
-    if (vwin) { ws = -ext; we = W + ext; }
-    else {
-        int hp = (reg[17] & 0x1F) * 16;
-        if (reg[17] & 0x80) { if (hp < W) { ws = hp; we = W + ext; } }
-        else if (hp > 0) { ws = -ext; we = hp >= W ? W + ext : hp; }
-    }
-    if (ws >= we) render_plane(la, ln, false, -ext + vs, W + ext + vs);
-    else if (vs != 0) {
-        render_plane(la, ln, false, -ext + vs, W + ext + vs);   // shifted plane, window stays put
-        render_window(la + (ws + ext), ln, ws, we);
-    } else {
-        if (ws > -ext) render_plane(la, ln, false, -ext, ws);
-        render_window(la + (ws + ext), ln, ws, we);
-        if (we < W + ext) render_plane(la + (we + ext), ln, false, we, W + ext);
-    }
+    int ws, we;
+    window_span(ln, &ws, &we);
+    draw_plane_a(la, ln, -ext, W + ext, ws, we);
 
     memset(ls, 0, TW);
     memset(spr_hud_, 0, TW);
@@ -430,9 +464,22 @@ void VDP::render_line(int ln) {
         if (!(debug_layers & 2)) memset(lb, 0, TW);
         if (!(debug_layers & 4)) memset(ls, 0, TW);
     }
+    compose(fb[ln], la, lb, ls, TW);
 
+    if (subs > 1) {
+        // (the scroll each plane was drawn with, as the screen shows it: the view shift taken off)
+        hfr_h_[hfr_cur_][0][ln] = (int16_t)(line_hscroll(ln, false) - view_shift);
+        hfr_h_[hfr_cur_][1][ln] = (int16_t)(line_hscroll(ln, true) - vsb);
+        hfr_v_[hfr_cur_][0][ln] = (int16_t)line_vscroll(false);
+        hfr_v_[hfr_cur_][1][ln] = (int16_t)line_vscroll(true);
+        hfr_ok_[hfr_cur_][ln] = 1;
+        for (int k = 1; k < subs; k++) render_sub_line(ln, k, subs);
+    }
+}
+
+// The line's layers composed into colour codes (priority, shadow / highlight, left column blank, edge masks).
+void VDP::compose(uint16_t* out, const uint8_t* la, const uint8_t* lb, const uint8_t* ls, int TW) {
     uint16_t bgc = cram[reg[7] & 0x3F];
-    uint16_t* out = fb[ln];
     const uint16_t spr_mark = mark_sprites ? kSpritePixel : 0;
     if (!(reg[12] & 0x08)) {
         for (int i = 0; i < TW; i++) {
@@ -485,6 +532,196 @@ void VDP::render_line(int ln) {
 }
 
 // ---------------------------------------------------------------------------
+// High frame rate (see sub_frames)
+// ---------------------------------------------------------------------------
+int VDP::line_hscroll(int ln, bool plane_b) const {
+    uint32_t hsbase = (reg[13] & 0x3F) << 10;
+    int hsoff;
+    switch (reg[11] & 3) {
+    case 0: hsoff = 0; break;
+    case 1: hsoff = (ln & 7) * 4; break;
+    case 2: hsoff = (ln & ~7) * 4; break;
+    default: hsoff = ln * 4; break;
+    }
+    return vram16(hsbase + hsoff + (plane_b ? 2 : 0)) & 0x3FF;
+}
+
+int VDP::line_vscroll(bool plane_b) const { return vsram[plane_b ? 1 : 0] & 0x3FF; }   // (2-cell mode: column 0's)
+
+// An in-between line (k / subs of the way from the last frame to this one): each plane drawn again with its V
+// scroll part of the way back and its pixels moved part of the way back horizontally (the module's line hook runs
+// first, at the line's own scroll, so what it draws moves along); a plane on a line with the window stays (as the
+// window does); the sprites part of the way back. Up to 16:9 the pixels moved in at the edges are the plane's own,
+// drawn 32 px beyond them; wider, where the hook may draw the far columns, the edge column is repeated.
+void VDP::render_sub_line(int ln, int k, int subs) {
+    const int W = active_width(), TW = W + 2 * ext;
+    const int cur = hfr_cur_, prev = cur ^ 1;
+    uint16_t* out = sub_fb[k - 1][ln];
+    const float back = hfr_ok_[prev][ln] ? 1.0f - (float)k / subs : 0.0f;
+    constexpr int kMaxMove = 32;
+    auto wrap10 = [](int d) { return ((d + 512) & 1023) - 512; };
+    int shift[2] = {0, 0}, vadd[2] = {0, 0};
+    bool moved = false;
+    for (int p = 0; p < 2 && back > 0; p++) {
+        int dh = wrap10(hfr_h_[cur][p][ln] - hfr_h_[prev][p][ln]);
+        int dv = wrap10(hfr_v_[cur][p][ln] - hfr_v_[prev][p][ln]);
+        if (std::abs(dh) > kMaxMove || std::abs(dv) > kMaxMove) dh = dv = 0;   // (a cut)
+        shift[p] = (int)std::lround(back * dh);
+        vadd[p] = -(int)std::lround(back * dv);
+        moved = moved || shift[p] || vadd[p];
+    }
+    for (int i = 0; i < kSat; i++) {
+        spr_sub_dx_[i] = (int16_t)-std::lround(back * spr_dx_[i]);
+        spr_sub_dy_[i] = (int16_t)-std::lround(back * spr_dy_[i]);
+        moved = moved || spr_sub_dx_[i] || spr_sub_dy_[i];
+    }
+    if (!moved) { memcpy(out, fb[ln], (size_t)TW * 2); return; }
+
+    constexpr int M = 32;
+    static uint8_t wa[kMaxWidth + 2 * M], wb[kMaxWidth + 2 * M];
+    uint8_t la[kMaxWidth], lb[kMaxWidth], ls[kMaxWidth];
+    int ws, we;
+    window_span(ln, &ws, &we);
+    if (ws < we) shift[0] = 0, vadd[0] = 0;
+    sub_ = true;
+    sub_vs_[0] = vadd[0];
+    sub_vs_[1] = vadd[1];
+    const int vsb = view_shift_b_on ? view_shift_b[ln] : view_shift;
+    render_plane(wb, ln, true, -ext - M + vsb, W + ext + M + vsb);
+    draw_plane_a(wa, ln, -ext - M, W + ext + M, ws, we);
+    memset(ls, 0, TW);
+    memset(spr_hud_, 0, TW);
+    // (the status bits and the next line's masking state stay the frame's own: the game reads them)
+    const bool ovf = sprite_overflow, col = sprite_collision, dot = dot_overflow_prev;
+    render_sprites(ls, ln);
+    sprite_overflow = ovf; sprite_collision = col; dot_overflow_prev = dot;
+    sub_ = false;
+    sub_vs_[0] = sub_vs_[1] = 0;
+    if (line_hook) line_hook(hook_host, ln, wa + M, wb + M, ls);
+    const bool own = ext <= 40;
+    const int lo = own ? -M : 0, hi = own ? TW + M - 1 : TW - 1;
+    for (int i = 0; i < TW; i++) {
+        la[i] = wa[M + std::clamp(i + shift[0], lo, hi)];
+        lb[i] = wb[M + std::clamp(i + shift[1], lo, hi)];
+    }
+    if (debug_layers != 7) {
+        if (!(debug_layers & 1)) memset(la, 0, TW);
+        if (!(debug_layers & 2)) memset(lb, 0, TW);
+        if (!(debug_layers & 4)) memset(ls, 0, TW);
+    }
+    compose(out, la, lb, ls, TW);
+}
+
+// The sprites' moves since the last frame. Games reorder their sprite table from frame to frame (flicker), so a
+// sprite is matched by its look, not its entry: last frame's sprite of the same pattern word and size, a short way
+// off, each taken once, nearest pairs first - unless last frame had a sprite of its palette and size right where it
+// is: then it's that one, animated. Otherwise it moves as the matched sprite of its palette nearest it (the rest of
+// the character); failing that, one not drawn near there last frame (flickered) is looked for in the frame before,
+// its move halved; else it's new and doesn't move. (Masking sprites, X = 0, and parked ones match nothing.)
+void VDP::sprite_moves() {
+    constexpr int kMatch = 20;
+    SprRec cur[kSat];
+    int width[kSat], near_d[kSat], near_p[kSat];
+    bool matched[kSat] = {}, taken[kSat] = {};
+    const bool wide = h40();
+    const uint32_t sat = wide ? ((reg[5] & 0x7E) << 9) : ((reg[5] & 0x7F) << 9);
+    const int max_total = wide ? 80 : 64;
+    const int lines = active_lines();
+    for (int i = 0; i < kSat; i++) width[i] = 8;
+    for (int n = 0, idx = 0; n < max_total; n++) {
+        uint32_t base = sat + idx * 8;
+        int y = vram16(base) & 0x1FF;
+        uint8_t size = vram[(base + 2) & 0xFFFF];
+        int link = vram[(base + 3) & 0xFFFF] & 0x7F;
+        uint16_t attr = vram16(base + 4);
+        int x = vram16(base + 6) & (sprite_x10 ? 0x3FF : 0x1FF);
+        int h = ((size & 3) + 1) * 8;
+        cur[idx].x = (int16_t)(x - 128 - view_shift);
+        cur[idx].y = (int16_t)(y - 128);
+        cur[idx].key = attr | (uint32_t)(size & 0x0F) << 16;
+        cur[idx].on = x != 0 && y - 128 + h > -32 && y - 128 < lines + 32;
+        width[idx] = (((size >> 2) & 3) + 1) * 8;
+        if (link == 0 || link >= max_total) break;
+        idx = link;
+    }
+    auto look = [](uint32_t k) { return (k >> 13 & 3) | (k >> 16 & 0x0F) << 2; };   // (palette, size)
+    for (int i = 0; i < kSat; i++) { spr_dx_[i] = spr_dy_[i] = 0; }
+    // Last frame's sprite of its palette and size nearest its place (within half its width).
+    for (int i = 0; i < kSat; i++) {
+        near_d[i] = 1 << 30; near_p[i] = -1;
+        if (!cur[i].on) continue;
+        const int lim = width[i] / 2;
+        for (int p = 0; p < kSat; p++) {
+            if (!spr_prev_[p].on || look(spr_prev_[p].key) != look(cur[i].key)) continue;
+            int dx = cur[i].x - spr_prev_[p].x, dy = cur[i].y - spr_prev_[p].y;
+            if (std::abs(dx) >= lim || std::abs(dy) >= lim) continue;
+            int d = std::abs(dx) + std::abs(dy);
+            if (d < near_d[i]) near_d[i] = d, near_p[i] = p;
+        }
+    }
+    // The same look: pairs nearest first, each sprite once.
+    struct Pair { int d, i, p; };
+    static std::vector<Pair> pairs;
+    pairs.clear();
+    for (int i = 0; i < kSat; i++) {
+        if (!cur[i].on) continue;
+        for (int p = 0; p < kSat; p++) {
+            if (!spr_prev_[p].on || spr_prev_[p].key != cur[i].key) continue;
+            int dx = cur[i].x - spr_prev_[p].x, dy = cur[i].y - spr_prev_[p].y;
+            if (std::abs(dx) > kMatch || std::abs(dy) > kMatch) continue;
+            int d = std::abs(dx) + std::abs(dy);
+            if (near_p[i] >= 0 && d > near_d[i] + 2) continue;   // (something was right here: animated)
+            pairs.push_back({d * 2 + (p != i), i, p});
+        }
+    }
+    std::sort(pairs.begin(), pairs.end(), [](const Pair& a, const Pair& b) { return a.d < b.d; });
+    for (const Pair& pr : pairs) {
+        if (matched[pr.i] || taken[pr.p]) continue;
+        spr_dx_[pr.i] = (int16_t)(cur[pr.i].x - spr_prev_[pr.p].x);
+        spr_dy_[pr.i] = (int16_t)(cur[pr.i].y - spr_prev_[pr.p].y);
+        matched[pr.i] = taken[pr.p] = true;
+    }
+    // Animated in place.
+    for (int i = 0; i < kSat; i++) {
+        if (!cur[i].on || matched[i] || near_p[i] < 0) continue;
+        spr_dx_[i] = (int16_t)(cur[i].x - spr_prev_[near_p[i]].x);
+        spr_dy_[i] = (int16_t)(cur[i].y - spr_prev_[near_p[i]].y);
+        matched[i] = true;
+    }
+    for (int i = 0; i < kSat; i++) {
+        if (!cur[i].on || matched[i]) continue;
+        // A matched neighbour of its palette.
+        int best = -1, best_d = 16 + 1;
+        for (int j = 0; j < kSat; j++) {
+            if (!cur[j].on || !matched[j] || look(cur[j].key) != look(cur[i].key)) continue;
+            int d = std::max(std::abs(cur[j].x - cur[i].x), std::abs(cur[j].y - cur[i].y));
+            if (d < best_d) best_d = d, best = j;
+        }
+        if (best >= 0) { spr_dx_[i] = spr_dx_[best]; spr_dy_[i] = spr_dy_[best]; continue; }
+        // Not drawn near here last frame (flickered): the frame before's, half the way.
+        bool drawn_near = false;
+        for (int p = 0; p < kSat && !drawn_near; p++)
+            drawn_near = spr_prev_[p].on && look(spr_prev_[p].key) == look(cur[i].key) &&
+                         std::abs(cur[i].x - spr_prev_[p].x) <= kMatch && std::abs(cur[i].y - spr_prev_[p].y) <= kMatch;
+        if (drawn_near) continue;
+        best = -1;
+        best_d = 1 << 30;
+        for (int p = 0; p < kSat; p++) {
+            if (!spr_prev2_[p].on || spr_prev2_[p].key != cur[i].key) continue;
+            int dx = cur[i].x - spr_prev2_[p].x, dy = cur[i].y - spr_prev2_[p].y;
+            if (std::abs(dx) > kMatch || std::abs(dy) > kMatch) continue;
+            int d = (std::abs(dx) + std::abs(dy)) * 2 + (p != i);
+            if (d < best_d) best_d = d, best = p;
+        }
+        if (best >= 0) {
+            spr_dx_[i] = (int16_t)((cur[i].x - spr_prev2_[best].x) / 2);
+            spr_dy_[i] = (int16_t)((cur[i].y - spr_prev2_[best].y) / 2);
+        }
+    }
+    for (int i = 0; i < kSat; i++) { spr_prev2_[i] = spr_prev_[i]; spr_prev_[i] = cur[i]; }
+}
+
+// ---------------------------------------------------------------------------
 // Save states
 // ---------------------------------------------------------------------------
 struct VdpState {
@@ -529,5 +766,6 @@ void VDP::load_state(const uint8_t* src) {
     addr = s->addr; hv_latch = s->hv_latch; hint_counter = s->hint_counter;
     dma_busy_until = s->dma_busy_until;
     delete s;
+    hfr_forget();
     update_irq();
 }

@@ -554,6 +554,15 @@ void Video::resize(int width, int height) {
 
 int  Video::width() const { return impl->w; }
 int  Video::height() const { return impl->h; }
+// (slang presets are Windows only: librashader's Direct3D 11 runtime)
+bool Video::slang_available() { return false; }
+bool Video::slang_active() const { return false; }
+bool Video::set_slang(const std::wstring& path, std::string* error) {
+    if (path.empty()) return true;
+    if (error) *error = "not available on Android";
+    return false;
+}
+
 void Video::set_vsync(bool on) {
     if (impl->vsync == on) return;
     impl->vsync = on;

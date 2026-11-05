@@ -24,6 +24,7 @@ static Settings preview_settings(const Settings& s) {
 
 void App::apply_settings() {
     video_.set_vsync(settings_.vsync);
+    apply_slang();
     if (session_) session_->apply_settings(settings_);
     for (auto& g : games_)
         if (g.preview) g.preview->apply_settings(preview_settings(settings_));
@@ -43,6 +44,28 @@ std::string App::black_frames_note() {
     if (per >= 2 && std::fabs(refresh - per * kEmuFps) < per * 1.0) snprintf(buf, sizeof(buf), "%.0f Hz", refresh);
     else snprintf(buf, sizeof(buf), "needs 120 Hz (now %.0f)", refresh);
     return buf;
+}
+
+// High frame rate: on a 100 Hz or faster display, as many pictures per game frame as it has refreshes (2 at 120 Hz,
+// 3 at 144 / 165 / 180 Hz, 4 at 240 Hz): the frame and in-betweens. Windows; not with black frame insertion.
+int App::hfr_sub_frames() {
+#ifdef __ANDROID__
+    return 1;
+#else
+    if (!settings_.high_frame_rate || settings_.black_frames) return 1;
+    const double hz = refresh_rate();
+    if (hz < 89) return 1;
+    return std::clamp((int)std::lround(hz / kEmuFps + 0.25), 2, VDP::kMaxSubFrames);
+#endif
+}
+
+std::string App::high_frame_rate_note() {
+    if (!settings_.high_frame_rate) return "";
+    if (settings_.black_frames) return "off with Black Frame Insertion";
+    const double hz = refresh_rate();
+    if (hz < 89) return "needs 100 Hz (now " + std::to_string((int)std::lround(hz)) + ")";
+    const int n = hfr_sub_frames() - 1;
+    return std::to_string((int)std::lround(hz)) + " Hz, " + std::to_string(n) + " in-between" + (n == 1 ? "" : "s");
 }
 
 uint32_t App::accent() const {
@@ -254,9 +277,13 @@ void App::frame(double dt) {
     // Phones often run at 120 Hz: there each game frame is shown for exactly two refreshes (refresh_rate() is
     // measured there, so a phone that drops to 60 Hz or 90 Hz is followed).
     const int per = std::max(1, (int)std::lround(refresh / kEmuFps));
+    hfr_subs_ = 1;
 #else
-    // (and at 120 / 180 / 240 Hz for black frame insertion)
-    const int per = settings_.black_frames ? std::max(1, (int)std::lround(refresh / kEmuFps)) : 1;
+    // High frame rate: in-between pictures while a game plays (not in fast forward, rewind or a recording).
+    hfr_subs_ = mode_ == Mode::Playing && session_ && !jukebox_.active() && !fast_forward_ && !rewinding_ && !recording_
+                    ? hfr_sub_frames() : 1;
+    // (and at 120 / 180 / 240 Hz for black frame insertion and the high frame rate)
+    const int per = settings_.black_frames || hfr_subs_ > 1 ? std::max(1, (int)std::lround(refresh / kEmuFps)) : 1;
 #endif
     const bool locked = settings_.vsync && std::fabs(refresh - per * kEmuFps) < per * 1.0;
     const int phase = locked ? (int)(++vsync_phase_ % per) : 0;
@@ -273,6 +300,18 @@ void App::frame(double dt) {
         frame_acc_ -= frames;
         frames = std::min(frames, fast_forward_ ? 12 : 3);
     }
+    // The picture this refresh shows, a frame late (the frame itself last, its in-betweens on the refreshes before):
+    // locked to the display, the counted refreshes; else the middle of this refresh's stretch of game time (the
+    // steadiest steps: at 100 Hz the next refresh's own moment would mostly lie past the newest frame); with V-Sync
+    // off a pass is 1 / K of a frame (app_win paces them).
+    hfr_pick_ = 0;
+    if (hfr_subs_ > 1 && !menu_.active()) {
+        const double t = locked ? (phase + 1.0) / per
+                         : settings_.vsync ? frame_acc_ + 0.5 * kEmuFps / refresh : frame_acc_ + 1.0 / hfr_subs_;
+        const int k = std::clamp((int)std::lround(t * hfr_subs_), 1, hfr_subs_);
+        hfr_pick_ = k < hfr_subs_ ? k : 0;
+    }
+    if (session_) session_->set_sub_frames(hfr_subs_);
 
     // Audio rate control: keep ~50 ms queued.
     const double target = 48000 * 0.05;
@@ -341,7 +380,7 @@ void App::frame(double dt) {
         jukebox_.hint_fade_ = menu_.toast_cover();
         jukebox_.draw(video_, (float)time_, jukebox_.module()->accent_color());
     } else if (mode_ == Mode::Playing && session_) {
-        draw_game_view(0, *session_, {0, 0, W, H}, 1.0f, 0.0f);
+        draw_game_view(0, *session_, {0, 0, W, H}, 1.0f, 0.0f, hfr_pick_);
 #ifdef __ANDROID__
         if (!menu_.active() && settings_.touch_mode != 2)
             touch_.draw(video_, settings_.touch_opacity / 100.0f, touch_.show_ff, touch_.show_rewind);
@@ -431,7 +470,7 @@ void App::run_script() {
             uint32_t ram_hash = 2166136261u;   // FNV-1a of 68000 RAM, to check a replay against the bot's run
             if (session_) for (uint8_t b : session_->md().ram) ram_hash = (ram_hash ^ b) * 16777619u;
             m << s.arg << " " << std::fixed << t << " loop " << loop_frame_ << " runs " << stat_runs_ << " pops " << stat_pops_
-              << " ram " << std::hex << ram_hash << std::dec << "\n";
+              << " ram " << std::hex << ram_hash << std::dec << " pick " << hfr_pick_ << "/" << hfr_subs_ << "\n";
             if (FILE* f = open_file(path_join(autotest_dir_, L"marks.txt"), "ab")) {
                 fputs(m.str().c_str(), f);
                 fclose(f);
@@ -468,6 +507,8 @@ void App::run_script() {
             else if (k == "filter") settings_.filter = std::clamp(v, 0, 4);
             else if (k == "hud_anchor") settings_.hud_anchor = v != 0;
             else if (k == "black_frames") settings_.black_frames = v != 0;
+            else if (k == "high_frame_rate") settings_.high_frame_rate = v != 0;
+            else if (k == "slang_preset") settings_.slang_preset = s.arg.substr(eq + 1);
             else if (k == "refresh") test_refresh_ = v;
             apply_settings();
             break;
@@ -523,9 +564,9 @@ Rect App::game_rect(int fw, int fh, Rect area) {
     return {std::floor(area.x + (area.w - w) * 0.5f), std::floor(area.y + (area.h - h) * 0.5f), w, h};
 }
 
-void App::draw_game_view(int slot, Session& s, Rect area, float alpha, float dim) {
+void App::draw_game_view(int slot, Session& s, Rect area, float alpha, float dim, int sub) {
     int fw, fh;
-    const uint32_t* px = s.frame(fw, fh);
+    const uint32_t* px = s.frame(fw, fh, sub);
     video_.upload_frame_slot(slot, px, fw, fh, fw);
     Rect r = game_rect(fw, fh, area);
     video_.draw_game(slot, r, (ScaleFilter)settings_.filter, alpha, dim);

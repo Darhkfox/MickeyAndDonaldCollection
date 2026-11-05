@@ -79,10 +79,21 @@ that fits the screen (2:1 on most phones).
 - Borderless fullscreen or windowed, monitor selection (by name; dragging the window to another screen
   selects it), window size 1×–6×, integer scaling, square / CRT (4:3) pixels or stretch.
 - Filters: nearest, sharp bilinear, bilinear, scanlines, CRT. Direct3D 11.
+- RetroArch slang shader presets (Windows) in place of the filter, through librashader: seven CRT presets
+  are included (crt-royale, crt-geom, crt-lottes, crt-easymode, crt-aperture, crt-pi, zfast-crt), and any
+  other `.slangp` preset put in the `shaders` folder appears in the list (e.g. the libretro slang-shaders
+  collection). Some presets were made for a 4:3 picture and can stretch or frame oddly in widescreen.
 - Sprite flicker removal (no sprites-per-line limit), V-Sync, FPS counter.
 - Black frame insertion for sharper motion, like a CRT: on a 120, 180 or 240 Hz display each game frame is
   followed by black refreshes (the picture gets darker; 144 / 165 Hz can't line up with 60 fps, so set
   the display to 120 Hz). On phones it asks for 120 Hz.
+- High frame rate (Windows) for smoother motion on 100 Hz and faster displays: the refreshes between the
+  games' 60 frames show in-between pictures, drawn by the Mega Drive core with each plane's scroll and the
+  sprites part of the way back to the last frame (sprites are matched by their look, as games reorder
+  them; jumps of more than 32 px are cuts). The game itself still runs at 60, so nothing about how it
+  plays changes; the picture is one frame later. 2 pictures per frame at 100 / 120 Hz, 3 at 144 / 165 /
+  180 Hz, 4 at 240 Hz. With V-Sync off (G-SYNC / FreeSync) they are shown at that rate. Not together with
+  black frame insertion.
 
 **Colours**
 - Profiles: Accurate (measured Mega Drive output levels), Linear, Vivid, Warm CRT, Cool, Grayscale, Sepia,
@@ -150,7 +161,7 @@ that fits the screen (2:1 on most phones).
 - 5 save-state slots per game (F5 / F9), fast forward (hold Tab or the right trigger, 4×), rewind (hold R
   or the left trigger, up to the last minute of play), screenshots (F12). Fast forward and rewind can each
   be switched off, and are only available while achievements are off.
-- Version 1.1 (shown in the launcher); the Credits page has links to the author.
+- Version 1.2 (shown in the launcher); the Credits page has links to the author.
 
 ## Default controls
 
@@ -188,7 +199,9 @@ folder isn't writable. Delete `settings.ini` to restore the defaults.
 ## Building from source
 
 Requirements: Windows 10/11, Visual Studio 2022 (or the Build Tools) with the C++ workload, CMake 3.20+.
-The Windows build has no third-party dependencies.
+Slang shaders use librashader through its C header (`third_party/librashader`, loaded at run time): when
+`third_party/librashader/librashader.dll` is there the build copies it, with the presets of
+`third_party/slang-shaders`, next to the exe; without it the game runs on its built-in filters.
 
 ```
 build.bat                                         :: builds build\bin\DisneyClassics.exe (Release, static CRT)
@@ -196,7 +209,8 @@ package.bat                                       :: dist\Mickey and Donald Coll
                                                   ::   shortcuts and the ROMs in this folder, for local play
 powershell -ExecutionPolicy Bypass -File release.ps1
                                                   :: dist\Mickey-and-Donald-Collection-v<version>-win64.zip:
-                                                  ::   the exe and readme.txt only (no ROMs)
+                                                  ::   the exe, readme.txt, librashader.dll and the
+                                                  ::   bundled shader presets (no ROMs)
 ```
 
 ### Android
@@ -280,9 +294,10 @@ A log line every 5 seconds gives the frame rate and the work per frame (`adb log
   demos end with Donald falling or stuck. With widescreen off everything is exactly original.
 - At 21:9: sprites entering at the very left edge can appear up to 20 px late, more enemies wait in the wider
   margins, and QuackShot's 512-pixel rooms (Dracula, the Ghosts, Pete, the final boss and a few others) are
-  narrower than the screen, so they show bars of 12 pixels at each side. In Castle of Illusion, Toyland's
-  animated blocks start moving a little after they come into view on the right. In QuackShot a defeated
-  enemy occasionally doesn't return when you scroll back.
+  narrower than the screen, so they show bars of 12 pixels at each side.
+- At 2:1 and 21:9, Castle of Illusion's Dessert Land can run short of object slots (it nearly fills them at
+  4:3, and the wider view keeps a few more objects alive), so a chocolate cake block can occasionally be
+  missing until you scroll away and back. The act can still be finished.
 - World of Illusion keeps its original camera in widescreen and slides the picture near level edges: for the
   first stretch of a level (40 px at 16:9, 64 px at 2:1) the scenery holds still while the player walks.
   There, water and cloud layers keep their own motion, a slower background can show a little more of its
@@ -302,6 +317,10 @@ A log line every 5 seconds gives the frame rate and the work per frame (`adb log
   Android).
 - The Android build uses SDL2 by Sam Lantinga and contributors, zlib licence (fetched by
   `android/fetch_sdl.ps1`, not stored in this repository).
+- Slang shaders run through librashader by Ronny Chan (chyyran), Mozilla Public License 2.0
+  (`librashader-LICENSE.md` next to the exe). The bundled presets are unmodified files from the libretro
+  slang-shaders collection, each with its own licence (public domain, GPL v2 or later, MIT): see
+  `shaders/README.txt`. They are separate files loaded at run time, not part of the program.
 - *Castle of Illusion*, *QuackShot* and *World of Illusion* © 1990–1992 Sega. Mickey Mouse and Donald Duck
   © Disney. This project contains no ROM data. It is an unofficial fan project, not affiliated with or
   endorsed by Sega or Disney.

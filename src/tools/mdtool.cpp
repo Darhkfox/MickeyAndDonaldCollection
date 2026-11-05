@@ -186,6 +186,21 @@ API int mdt_frame_raw(void* h, uint16_t* out, int* w, int* hgt) {
     return 1;
 }
 
+// High frame rate: draw K-1 in-between pictures with each frame (1 = off), and read one (k = 1 .. K-1; 0 = the
+// frame itself) as palette-converted pixels.
+API void mdt_set_sub_frames(void* h, int k) { ((Tool*)h)->md.vdp.sub_frames = k; }
+API int mdt_sub_frame(void* h, int k, uint32_t* out, int* w, int* hgt) {
+    Tool* t = (Tool*)h;
+    VDP& v = t->md.vdp;
+    *w = v.fb_width; *hgt = v.fb_lines;
+    if (k < 0 || k >= VDP::kMaxSubFrames) return 0;
+    if (out)
+        for (int y = 0; y < v.fb_lines; y++)
+            for (int x = 0; x < v.fb_width; x++)
+                out[y * v.fb_width + x] = t->palette[(k ? v.sub_fb[k - 1][y][x] : v.fb[y][x]) & 0x7FF];
+    return 1;
+}
+
 API int mdt_frame(void* h, uint32_t* out, int* w, int* hgt) {
     Tool* t = (Tool*)h;
     VDP& v = t->md.vdp;

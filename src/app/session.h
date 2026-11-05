@@ -31,8 +31,11 @@ public:
 
     // Runs one emulated frame with the given pad states (MdButton bits).
     void run_frame(uint16_t pad1, uint16_t pad2);
-    // Converts the last frame to BGRA using the current palette; applies widescreen masks.
-    const uint32_t* frame(int& w, int& h);
+    // Converts the last frame to BGRA using the current palette; applies widescreen masks. sub > 0: the frame's
+    // in-between picture `sub` instead (high frame rate, see set_sub_frames).
+    const uint32_t* frame(int& w, int& h, int sub = 0);
+    // High frame rate: the VDP draws k-1 in-between pictures with each frame (1 = none).
+    void set_sub_frames(int k) { md_->vdp.sub_frames = k; }
     // Resamples the last frame's audio to `out` (48 kHz stereo int16), appending.
     void mix_audio(std::vector<int16_t>& out, double adjust);
     void set_audio_rate(double out_rate);
