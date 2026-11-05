@@ -22,6 +22,9 @@ constexpr uint32_t POPCORN = 0xFF8F90, GUM = 0xFF8F92, AMMO_DIRTY = 0xFFEE5B;
 constexpr uint32_t FREE_MOVE = 0xFFEE07;
 constexpr uint32_t QUACK = 0xFFEE62, QUACK_TIME = 0xFF8FA8, TEMPER = 0xFF8F9A;
 constexpr uint32_t SPAWN_ALL_FLAG = 0x07B45E;   // ROM: "moveq #0/1,d6" in the spawn hook (see wide_patches)
+constexpr uint32_t TRIGGER = 0x07B4A0;          // ROM: the column trigger's direction split (see wide_patches)
+constexpr uint32_t LEFT_FLAG = TRIGGER + 4;     // ROM: "bra.s" there skips the 4:3 left column, "nop" runs it
+constexpr uint16_t LEFT_OFF = 0x600E, LEFT_ON = 0x4E71;
 constexpr uint32_t SFX_REQ = 0xFFEE52;    // sound effect waiting to go to the Z80 driver ($7FED8 sends it)
 constexpr uint8_t SFX_PLANE = 0xB4;       // "airplane arrives", asked for by the plane object ($8024)
 constexpr uint8_t M_TITLE = 0x01, M_MAP = 0x02, M_MAP_TO_LEVEL = 0x03, M_GAMEPLAY = 0x05, M_PAUSE = 0x08,
@@ -184,8 +187,8 @@ std::vector<RomPatch> wide_patches(int E) {
         // are dropped, at most 20 px at the edge)
         {0x009BCE, {0x0C40, 0x0060}, {0x0C40, (uint16_t)std::max(1, 0x60 - E)}},
         {0x009BD4, {0x0C40, 0x01C0}, {0x0C40, (uint16_t)(0x1C0 + E)}},
-        // objects: spawn one 128-px cell further left, despawn 256 px off the left edge
-        {0x019C1C, {0x0440, 0x0071}, {0x0440, 0x00F1}},
+        // objects: spawn one 128-px cell further left, despawn 256 px off the left edge (the left column is
+        // in the trigger code at TRIGGER, below)
         {0x019D74, {0x0C47, 0x0280}, {0x0C47, keep}},
         {0x009A9A, {0x0C44, 0x0280, 0x6400, 0x1C22, 0x4A44, 0x6B00, 0x1C1C},
                    {0x3004, 0x0640, 0x0080, 0x0C40, keep, 0x6400, 0x1C1C}},
@@ -224,6 +227,9 @@ std::vector<RomPatch> wide_patches(int E) {
         // leaves them and the original-column pass, 128 px later, creates only them - at the 4:3 moment,
         // so also at the same distance from Donald. Entries only a little left of their cell keep the far
         // timing, which brings them in at the right edge as 4:3 does. Entry hook at $7B420.
+        // The Island's vines ($87, Area 1's climbing shaft) are deferred too: a vine crumbles once Donald is 64 px
+        // above it, so created a cell early - while he is still coming down the tunnels above the shaft - the
+        // bottom ones fell away before he got there and the climb could not be started.
         // The two passes are told apart by the wrapper's return addresses ($7B40C original, $7B418 far), which
         // nothing else pushes - the area-start spawner ($19D5A) and the left trigger use the same loop.
         const std::vector<uint16_t> wrap = {
@@ -232,7 +238,7 @@ std::vector<RomPatch> wide_patches(int E) {
             0x4E75,                                           // rts
         };
         p.push_back({0x07B400, std::vector<uint16_t>(wrap.size(), 0xFFFF), wrap});
-        p.push_back({0x019C16, {0x0640, 0x0180, 0x6004}, {0x4EF9, 0x0007, 0xB400}});
+        // (the trigger code at TRIGGER below jumps to the wrapper)
         // In $19C5E's entry loop, before the free-slot search: a2 = entry+1 (x at 6(a2)), 6(sp) = column
         // (saved d2), 20(sp) = $19C52 when called from the column loop, 24(sp) = that loop's caller.
         // d3/d6 are free here.
@@ -256,11 +262,13 @@ std::vector<RomPatch> wide_patches(int E) {
             0x47F8, 0x9000, 0x3C3C, 0x002F,   // 35 go: lea $9000.w,a3 / move.w #$2f,d6 (as the original)
             0x4EF9, 0x0001, 0x9D7C,           // 39 jmp $19D7C (free slot search, carry = none)
             0x003C, 0x0001, 0x4E75,           // 42 skip: ori #1,ccr / rts
-            0x1C2A, 0x0006, 0xE14E,           // 45 deferred: move.b 6(a2),d6 / lsl.w #8,d6
-            0x1C2A, 0x0007,                   // 48 move.b 7(a2),d6                   entry x
-            0x362F, 0x000A, 0xEF4B, 0x9C43,   // 50 move.w 10(sp),d3 / lsl.w #7,d3 / sub.w d3,d6
-            0x0646, 0x00C0,                   // 54 addi.w #192,d6   (< 0: more than 192 px left of its cell)
-            0x4E75,                           // 56 rts
+            0x0C12, 0x0087, 0x6604,           // 45 deferred: cmpi.b #$87,(a2) / bne.s +4
+            0x7CFF, 0x4E75,                   // 48 moveq #-1,d6 / rts                 a vine: deferred
+            0x1C2A, 0x0006, 0xE14E,           // 50 move.b 6(a2),d6 / lsl.w #8,d6
+            0x1C2A, 0x0007,                   // 53 move.b 7(a2),d6                   entry x
+            0x362F, 0x000A, 0xEF4B, 0x9C43,   // 55 move.w 10(sp),d3 / lsl.w #7,d3 / sub.w d3,d6
+            0x0646, 0x00C0,                   // 59 addi.w #192,d6   (< 0: more than 192 px left of its cell)
+            0x4E75,                           // 61 rts
         };
         auto bra = [&](size_t at, size_t target) { hook[at] |= (uint8_t)(2 * ((int)target - (int)at - 1)); };
         bra(4, 18); bra(9, 35); bra(16, 35); bra(17, 28); bra(22, 31); bra(27, 35);
@@ -272,6 +280,31 @@ std::vector<RomPatch> wide_patches(int E) {
         // ...and the vertical trigger spawns 6 cell columns instead of 5 ((X>>7)-1 .. +4), so objects in that
         // extra column also appear when they come into range by scrolling up or down
         p.push_back({0x019BEA, {0x7E04}, {0x7E05}});
+    }
+    // Column trigger ($19C08, the camera crossed a 128-px boundary; d2 = its X step): `tst.w d2 / bmi.s` at $19C12
+    // now goes to TRIGGER. Left: the column one cell further left, (X-$F1)>>7, so objects appear before the widened
+    // left edge. Right: the far wrapper ($7B400) from 2:1 on, else the original (X+$180)>>7.
+    // Turning round, the widened passes skip a column 4:3 creates at once: moving left, (X-$71)>>7 is created
+    // only at the next boundary (4:3 creates it here); moving right from 2:1 on, the original-column pass makes
+    // only deferred entries, assuming the far pass made the rest a cell earlier. Entries that have meanwhile gone
+    // (deleted off screen, like the Egypt bridge pieces $75/$8E) or that only appear on the way back are then
+    // missing until the camera crosses back. post_frame() sees each crossing a frame before the spawner does and,
+    // for the first crossing after a turn, switches on the 4:3 left column (LEFT_FLAG) or, to the right, the
+    // full original-column pass (SPAWN_ALL_FLAG) - so that crossing creates what 4:3 creates.
+    {
+        std::vector<uint16_t> t = {
+            0x4A42, 0x6A1A,                   // 00 tst.w d2 / bpl.s right (1E)
+            LEFT_OFF,                         // 04 LEFT_FLAG: bra.s plain (14), or nop
+            0x3F00, 0x0440, 0x0071,           // 06 move.w d0,-(sp) / subi.w #$71,d0      the 4:3 column
+            0x4EB9, 0x0001, 0x9C20,           // 0C jsr $19C20
+            0x301F,                           // 12 move.w (sp)+,d0
+            0x0440, 0x00F1,                   // 14 plain: subi.w #$F1,d0                  one cell further
+            0x4EF9, 0x0001, 0x9C20};          // 18 jmp $19C20
+        if (far) t.insert(t.end(), {0x4EF9, 0x0007, 0xB400});                        // 1E right: jmp wrapper
+        else t.insert(t.end(), {0x0640, 0x0180, 0x4EF9, 0x0001, 0x9C20});            // 1E addi.w #$180,d0 / jmp
+        p.push_back({TRIGGER, std::vector<uint16_t>(t.size(), 0xFFFF), t});
+        p.push_back({0x019C14, {0x6B06, 0x0640, 0x0180, 0x6004, 0x0440, 0x0071},
+                               {0x4E71, 0x4EF9, (uint16_t)(TRIGGER >> 16), (uint16_t)TRIGGER, 0x4E71, 0x4E71}});
     }
     // Camera clamp: keep plane A's camera E px inside its bounds when the area is wide enough,
     // so the widened view never shows outside the level (code in the unused gap at $7B000).
@@ -551,6 +584,17 @@ public:
         if (md.module_state[0] && (uint32_t)(md.ram16(0xFF852C) >> 7) != (md.module_state[0] & 0xFFFF)) {
             md.module_state[0] = 0;
             if (E > 40) md.patch_rom16(SPAWN_ALL_FLAG, 0x7C00);
+        }
+        // The first crossing after a turn (wide_patches, TRIGGER): $852C -> $8524 is the step the spawner looks at
+        // next frame. module_state[2]: direction of the last crossing (1 right, 0xFF left, 0 none yet).
+        if (E > 0) {
+            const int from = md.ram16(0xFF852C) >> 7, to = md.ram16(0xFF8524) >> 7;
+            if (from != to) {
+                const int dir = to > from ? 1 : -1, last = (int8_t)(uint8_t)md.module_state[2];
+                md.module_state[2] = (uint8_t)dir;
+                md.patch_rom16(LEFT_FLAG, dir < 0 && last > 0 ? LEFT_ON : LEFT_OFF);
+                if (E > 40) md.patch_rom16(SPAWN_ALL_FLAG, (dir > 0 && last < 0) || md.module_state[0] ? 0x7C01 : 0x7C00);
+            }
         }
         const bool level = wide_gameplay(md) || game_over(md);
         // A switch into play lands mid-frame (the HUD hook still sees the old mode on the status bar

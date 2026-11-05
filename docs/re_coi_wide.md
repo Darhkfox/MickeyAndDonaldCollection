@@ -164,6 +164,25 @@ Wide entries (W=5) thus still start animating only when their right end reaches 
 of such an entry can be frozen while in the right extension); narrow ones get the full widening.
 Consequence: those blocks start animating up to k blocks earlier (their phase when entering the old view differs).
 
+**v1.1.1 (November 2026): the writer clips instead.** A frozen jelly pit (Toyland 2's 5x4 entries) shows its
+unanimated map blocks, i.e. plain floor, so at 16:9 and 21:9 the pits only filled in near the 4:3 edge (user
+report). Now the test is the plain widening, visible ⇔ `X+W+k >= cx` ∧ `X <= cx+20+k` with k = ceil(E/16)+1
+(CAVE_ANIM, moved to the `$FF` padding at `$59110`, see below), and `$F224` writes every block to the RAM map
+as before but the two name-table writes of a block (`$F2DE-$F2F3`, jsr CAVE_W at `$7FF40`) only for block
+columns in `[cx-7, cx+24]`. A column outside that range gets its tiles from the RAM map: the streamer copies
+the column when it scrolls into the plane, and beyond 2:1 `draw_far_columns()` draws `cx+24` on from the map.
+One race had to be handled: the streamer fills its column buffer (`$F982`, sets `$FABF`) before the animation
+runs and VBlank copies the buffer afterwards, so a block that animates in the frame its column is queued
+gets its previous frame back (seen: an entry starting at `cx+24` stayed stale for 16 frames, 8 px of it visible
+at 16:9). CAVE_ANIM therefore also reports "not visible" for an entry that overlaps the queued column
+(`X/16+24` moving right, `(X+15)/16-8` moving left) in that frame; it animates one frame later. Rows need no
+such check (a queued row is 8 rows above or 24 below the camera, outside any visible entry).
+Check (`tools/qa/v111/anim_check.py`, camera driven right and left at three heights, plane A name table
+against the RAM map over the live columns every frame): Toyland 1 and 2 at 16:10, 16:9, 2:1: 0 mismatches;
+21:9: 0 except column `cx+24`, which is drawn from the RAM map at that width (the old build: 256 cells, also
+at `cx-7`). The padding at `$59102-$591FF` follows an `rts` and precedes data at `$59200`; no longword points
+into it, and the MD+ COI ROM leaves it untouched.
+
 ## 3. Objects / sprites
 
 * Object slots: `$D000`-`$DBFF` (48 x `$40`), player `$DC00`, `$DC40`-`$DFFF` (15). Object: `+0` id.w,
@@ -195,6 +214,26 @@ Consequence: those blocks start animating up to k blocks earlier (their phase wh
   `camX-E-$71 .. camX+E+$18F`. The delete window (O1) is widened by E on both sides so objects spawned
   E px earlier are not deleted immediately (first version got this wrong and lost objects — caught by the
   pop-in test).
+* **Turning round (v1.1.1, November 2026).** With a plain shift the trigger's X jumps by 2E when the camera
+  reverses, and a column whose boundary falls in that gap is never spawned on the way back, though 4:3 spawns
+  it a moment later. Most objects there are still alive, but those placed to appear only on the way back are
+  lost - Storm 1's jumping fish at x 3344 (layout `$CD67`, needed to cross the pit after the bridge has fallen)
+  never came at 21:9 when the camera turned round between X 3328 and 3436 (user report: the very top route ends
+  at a wall with the camera near 3420). CAVE_H (now at `$7FF74`) keeps the trigger's own X in `$FAB4` (a word the
+  game only clears): moving right it starts from max(its X, previous camera X), moving left from min(...), and
+  steps at most one 128-px boundary per frame towards X+E / X-E, landing on the boundary (right) or 1 px past
+  it (left) so the column is the one 4:3 spawns there. Moving steadily it equals the old shift; it holds still
+  with the camera; a jump of 64 px or more, or a value more than E+64 px from the camera, falls back to the
+  plain shift. Check (`tools/qa/v111/coi_turn.py`: camera driven right at each level's start height with a
+  state every 64 px, then 448 px back; an entry counts when it is in a slot at two consecutive frame ends):
+  turn points where an entry the 4:3 run has is missing, 22 levels: 21:9 104 → 29, 16:9 71 → 15. What is left is
+  object behaviour, not the trigger: enemies spawned earlier wander off sooner, and Dessert Land runs out of
+  object slots (below).
+* **Dessert Land slot limit (known, not fixed).** Its `$D000` group (32 slots) is nearly full at 4:3 (30-31: 16
+  are the long-lived railing/background objects `$4D/$4E/$4F/$90`); the wider keep window holds 2-3 more objects
+  at 2:1 and 21:9, so a spawn can fail and a chocolate cake block (`$10`, an obstacle Mickey jumps onto, e.g.
+  x 1304/1344) is missing until its column is spawned again. A bot walk through the act: 0 failures at 4:3 and
+  16:9, 1 at 2:1, 2 at 21:9; the act can still be finished.
 * `$1FF6` "object on screen" (camX < X <= camX+320, camY < Y <= camY+192) is only used to decide whether
   to play an enemy SFX (4 callers) — widened by patch S1 (optional).
 * Objects `$BE/$BF` (Dessert 1 background sprites that move with plane B, `$FDFC/$FE0C`): own window
@@ -348,6 +387,8 @@ CAVE_CAM ($7FEB0)  entered by jmp from $EEEC, a1 = camera struct ($FA80 or $FAC0
 ```
 Code caves use the `$FF` fill at `$7FE6C-$7FFFF` (last code ends at `$7FE6A`; no references into the area):
 CAVE_H `$7FE80-$7FE99`, CAVE_V `$7FE9A-$7FEA7`, CAVE_CAM `$7FEB0-$7FF3D`, CAVE_ANIM `$7FF40-$7FF73`.
+Since v1.1.1: CAVE_V `$7FE9A`, CAVE_CAM `$7FEB0`, CAVE_W `$7FF40-$7FF73`, CAVE_H `$7FF74-$7FFFB` (the
+turn-round version), CAVE_ANIM `$59110-$5915B` (padding after code; `$7FE6C-$7FE99` is free again).
 The ROM checksum (`$18E`, verified by the boot code at `$31A`-`$342`, skipped only on soft reset) must be
 recomputed after patching: 16-bit sum of all big-endian words from `$200` to the end
 (`coi_wide_common.rom_checksum`; `patched_rom(E, clamp=True)` builds the complete patched image;

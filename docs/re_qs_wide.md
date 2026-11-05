@@ -302,6 +302,33 @@ Round 3 QA census: 41 of the 1,036 spawn entries are deferred - the 15 swoop-in 
 falling things, Transylvania enemies (`$25`, `$2C`), `$0C`, `$52`, `$8B`, `$7D`-`$7F`, `$76`, `$B0` and the Ghosts
 `$90-$99`; all of them now appear at the camera position and screen spot they have at 4:3.
 
+**Island vines and turning round (November 2026, v1.1.1).** User report: at 21:9 the first vine of The Island
+Area 1's climbing shaft (type `$87`, entry `$8369`, x 4000 y 904, over the bottomless pit at the shaft's foot) never
+appeared. A vine ($11B26) crumbles - it deletes itself and clears its spawn flag - once Donald is 64 px or more
+above it (state 2 at `$11BFE`), so the ones he has climbed past fall away. At 4:3 the shaft's bottom vines are
+created by the original column (X+$180) at camera X 3584, when Donald is already at the bottom; from 2:1 on the
+far pass created them a cell earlier, at 3456, while he was still coming down the tunnels above - they crumbled
+off screen at once, and the original-column pass does not create non-deferred entries again. `$87` entries are
+now deferred (hook: `cmpi.b #$87,(a2)` ahead of the x test), so they are created at the 4:3 moment; the vertical
+trigger creates them as before. Check (`tools/qa/v111/qs_bottom.py`): flying down the tunnels into the shaft, the
+vine is there at every width (before: missing at 2:1 and 21:9).
+
+The same "a pass a cell early, the 4:3 pass skipped" design loses entries when the camera turns round:
+moving left, the left column is (X-$F1)>>7, so (X-$71)>>7, which 4:3 creates at the first crossing after a turn,
+comes only a crossing later; moving right (2:1 on), the original-column pass makes only deferred entries. Entries
+that went meanwhile - e.g. bridge pieces `$75`/`$8E` (Egypt), which delete themselves off screen - or that 4:3
+creates only on the way back stayed missing. The column trigger (`tst.w d2 / bmi.s` at `$19C12`) now jumps to
+`$7B4A0` for both directions (left: `subi #$F1` there; right: the far wrapper `$7B400`, or `addi #$180` up to
+16:9), and post_frame(), which sees the step `$852C -> $8524` the spawner handles next frame, switches on for the
+first crossing after a turn either the 4:3 left column (ROM word `$7B4A4`: `bra.s` -> `nop`, the code then runs
+(X-$71)>>7 before (X-$F1)>>7) or, to the right, the full original-column pass (`SPAWN_ALL_FLAG`). That crossing
+thus creates what 4:3 creates there (also defeated enemies of that column, as 4:3 does). Check
+(`tools/qa/v111/qs_turn.py`, camera driven at each area's start height, a state every 64 px, both directions,
+448 px after each turn): in the 8 areas with the most differences, turn points where 21:9 lacks an entry 4:3 has
+went from 170 to 73 of 713; `$8E` 14 -> 0, `$7D` 14 -> 2. The rest are enemies that, created a cell earlier,
+are elsewhere or gone (walkers `$1B`, birds `$4B`), and a few cases where the test's whole-area traversal fills
+Pyramid 2's 48 slots (a plain left-to-right flight through every area at 2:1 and 21:9: no free-slot failure).
+
 **Switching width mid-level (October 2026, round 3).** From 16:9 or narrower up to 2:1 / 21:9 the game has created
 columns up to (X>>7)+3, while from then on the original-column pass creates only deferred entries and the far pass
 starts at +5, so the non-deferred entries of +4 were lost (67 of 164 tested switch points). `configure()` now notes

@@ -137,24 +137,101 @@ const std::vector<RomPatch> kMidairJump = {{0x00C8B6, {0x000D}, {0x0005}}};
 // Tile streaming needs no change (the engine keeps the whole 512-px plane valid). The patches widen
 // sprite culling, the object spawn/delete windows, the animated-block visibility test, the SFX
 // "on screen" test, and clamp the camera E px inside each level (code caves in the $FF fill at the end).
-constexpr uint32_t CAVE_H = 0x7FE80, CAVE_V = 0x7FE9A, CAVE_CAM = 0x7FEB0, CAVE_ANIM = 0x7FF40;
+constexpr uint32_t CAVE_V = 0x7FE9A, CAVE_CAM = 0x7FEB0, CAVE_W = 0x7FF40, CAVE_H = 0x7FF74;
+constexpr uint32_t CAVE_ANIM = 0x059110;   // in the $FF padding at $59102-$591FF (code before, data from $59200)
+constexpr uint16_t SPAWN_X = 0xFAB4;   // the column trigger's own camera X (a word the game only clears)
+
+// The column trigger ($6D53C) spawns the cell column at X+$180 / X-$71 when X crosses a 128-px boundary. For the
+// wide view it runs on X+E moving right and X-E moving left, so objects come in at the widened edges. A plain
+// shift loses crossings when the camera turns round: the trigger's X jumps by 2E, and a column whose boundary lies
+// in that gap is never spawned, though 4:3 spawns it a moment later (objects placed to appear only on the way
+// back - the Storm 1 jumping fish - never came at 21:9). So the trigger keeps its own X (SPAWN_X): moving right it
+// starts from max(itself, previous X), moving left from min(itself, previous X) - so the boundary the camera
+// crosses in the turning frame still counts - and steps one boundary per frame towards X+E / X-E,
+// landing on (right) or 1 px past (left) each boundary so the column is the one 4:3 spawns there. While the camera
+// moves steadily it equals the old shift; it stands still while the camera does; a jump of 64 px or more (or a
+// stale value) falls back to the plain shift.
+std::vector<uint16_t> cave_h_code(int E) {
+    const uint16_t e = (uint16_t)E;
+    return {
+        0x302E, 0x0004,              // 00 move.w 4(a6),d0      X
+        0x362E, 0x0018,              // 04 move.w $18(a6),d3    previous X
+        0x3200, 0x9243,              // 08 move.w d0,d1 / sub.w d3,d1
+        0x0641, 0x003F,              // 0C addi.w #63,d1
+        0x0C41, 0x007E,              // 10 cmpi.w #126,d1
+        0x625C,                      // 14 bhi.s  jump (72)    moved 64 px or more
+        0x4A6E, 0x001E,              // 16 tst.w  $1e(a6)       dX
+        0x6752,                      // 1A beq.s  still (6E)
+        0x3438, SPAWN_X,             // 1C move.w SPAWN_X,d2
+        0x3202, 0x9243,              // 20 move.w d2,d1 / sub.w d3,d1
+        0x0641, (uint16_t)(E + 64),  // 24 addi.w #E+64,d1
+        0x0C41, (uint16_t)(2 * E + 128),  // 28 cmpi.w #2E+128,d1
+        0x6302,                      // 2C bls.s  +2            within E+64 of the previous X
+        0x3403,                      // 2E move.w d3,d2         else start from it
+        0x4A6E, 0x001E,              // 30 tst.w  $1e(a6)
+        0x6B1A,                      // 34 bmi.s  left (50)
+        0xB443, 0x6C02, 0x3403,      // 36 cmp.w d3,d2 / bge.s +2 / move.w d3,d2   base = max(own, previous X)
+        0x3602,                      // 3C move.w d2,d3         previous = base
+        0x0042, 0x007F, 0x5242,      // 3E ori.w #$7F,d2 / addq.w #1,d2            next boundary above
+        0x0640, e,                   // 44 addi.w #E,d0         target X+E
+        0xB042, 0x6F1C,              // 48 cmp.w d2,d0 / ble.s store (68)
+        0x3002, 0x6018,              // 4C move.w d2,d0 / bra.s store
+        0xB443, 0x6F02, 0x3403,      // 50 left: cmp.w d3,d2 / ble.s +2 / move.w d3,d2   base = min(own, prev X)
+        0x3602,                      // 56 move.w d2,d3
+        0x0242, 0xFF80, 0x5342,      // 58 andi.w #$FF80,d2 / subq.w #1,d2         1 px past the boundary below
+        0x0440, e,                   // 5E subi.w #E,d0         target X-E
+        0xB042, 0x6C02, 0x3002,      // 62 cmp.w d2,d0 / bge.s store / move.w d2,d0
+        0x31C0, SPAWN_X, 0x4E75,     // 68 store: move.w d0,SPAWN_X / rts
+        0x3600, 0x4E75,              // 6E still: move.w d0,d3 / rts      (no crossing)
+        0x323C, e,                   // 72 jump: move.w #E,d1   (the plain shift)
+        0x4A6E, 0x001E, 0x6A02, 0x4441,  // 76 tst.w $1e(a6) / bpl.s +2 / neg.w d1
+        0xD041, 0xD641,              // 7E add.w d1,d0 / add.w d1,d3
+        0x31C0, SPAWN_X, 0x4E75};    // 82 move.w d0,SPAWN_X / rts
+}
 
 std::vector<RomPatch> wide_patches(int E) {
-    // k = animated-block look-ahead in 16-px blocks. More than 3 overlaps the plane columns the
-    // streamer is rewriting (Toyland 2 corrupts at E >= 56), so the 2:1 mode keeps 3.
-    const uint16_t e = (uint16_t)E, k = (uint16_t)((std::min(E, 48) + 15) / 16);
+    // k = animated-block look-ahead in 16-px blocks: the view reaches ceil(E/16) block columns past the 4:3
+    // ones on each side, one more so a block is animating before it shows.
+    const uint16_t e = (uint16_t)E, k = (uint16_t)((E + 15) / 16 + 1);
     const uint16_t up = (uint16_t)std::max(0x1E0, 0x1C0 + E);
     // The clip tests are unsigned, so the left bound must stay above 0 (X = 0 would also act as a
     // sprite mask); beyond E = 95 pieces starting left of VDP X 1 are dropped (at most 20 px at the edge).
     const uint16_t lo = (uint16_t)std::max(1, 0x60 - E);
     auto ff = [](size_t n) { return std::vector<uint16_t>(n, 0xFFFF); };
-    std::vector<uint16_t> cave_h = {0x323C, e, 0x4A6E, 0x001E, 0x6A02, 0x4441, 0x302E, 0x0004, 0xD041,
-                                    0x362E, 0x0018, 0xD641, 0x4E75};
+    const std::vector<uint16_t> cave_h = cave_h_code(E);
     std::vector<uint16_t> cave_v = {0x302E, 0x0004, 0x0440, e, 0x0240, 0xFF80, 0x4E75};
-    std::vector<uint16_t> cave_anim = {
-        0x3601, 0xD668, 0x001C, 0x3003, (uint16_t)(0x5040 | ((k & 7) << 9)), 0xB042, 0x6520, 0x3001,
-        0x5E40, 0xB042, 0x6D18, 0x0443, 0x0019, 0xB642, 0x6E10, 0x3002, 0x0640, (uint16_t)(0x14 + k),
-        0xB240, 0x6206, 0x023C, 0x00FE, 0x4E75, 0x003C, 0x0001, 0x4E75};
+    // Animated map blocks ($9400 entries, $F0C0) animate only while visible ($F32E: X+W >= camX/16 and
+    // X <= camX/16+20, in blocks). CAVE_ANIM widens that by k on both sides. The writer $F224 puts each block in
+    // the RAM map and the name table; in the table it wraps at 32 columns, and only [cx-7, cx+24] are the
+    // streamer's live columns, so CAVE_W skips the name-table write outside them (the streamer copies such a
+    // column from the RAM map when it scrolls in, and beyond 2:1 the far columns are drawn from the map).
+    // Before, entries had to lie inside those columns whole, and Toyland 2's 5-block jelly pits stayed frozen -
+    // empty - in the right extension until they reached the 4:3 edge.
+    // The column the streamer queued this frame ($F982 sets $FABF; VBlank copies it from a buffer filled before
+    // the animation runs) would bring back the block's previous frame, so an entry that overlaps it waits a frame.
+    std::vector<uint16_t> cave_anim = {   // in: d1 = X, d2 = camX/16, a0 = entry; out: carry = not visible
+        0x3601, 0xD668, 0x001C,           // 00 move.w d1,d3 / add.w $1c(a0),d3      X+W
+        0x0643, k,                        // 06 addi.w #k,d3
+        0xB642, 0x6538,                   // 0A cmp.w d2,d3 / bcs.s inv              X+W+k < cx
+        0x3002, 0x0640, (uint16_t)(0x14 + k),  // 0E move.w d2,d0 / addi.w #20+k,d0
+        0xB240, 0x622E,                   // 14 cmp.w d0,d1 / bhi.s inv              X > cx+20+k
+        0x4A38, 0xFABF, 0x6722,           // 18 tst.b $FABF.w / beq.s vis           no column queued
+        0x3038, 0xFA84,                   // 1E move.w $FA84.w,d0
+        0x4A78, 0xFA9E, 0x6B08,           // 22 tst.w $FA9E.w / bmi.s left
+        0xE840, 0x0640, 0x0018, 0x6008,   // 28 asr.w #4,d0 / addi.w #24,d0 / bra.s col    X/16+24
+        0x0640, 0x000F, 0xE840, 0x5140,   // 30 left: addi.w #15,d0 / asr.w #4,d0 / subq.w #8,d0   (X+15)/16-8
+        0x9041, 0xB068, 0x001C, 0x6506,   // 38 col: sub.w d1,d0 / cmp.w $1c(a0),d0 / bcs.s inv   inside the entry
+        0x023C, 0x00FE, 0x4E75,           // 40 vis: andi.b #$fe,ccr / rts
+        0x003C, 0x0001, 0x4E75};          // 46 inv: ori.b #1,ccr / rts
+    const std::vector<uint16_t> cave_w = {   // the two name-table writes of one block, for live columns only
+        0x3E28, 0x001C, 0x5347, 0x9E43,   // move.w $1c(a0),d7 / subq.w #1,d7 / sub.w d3,d7    index in the row
+        0xDE68, 0x0018,                   // add.w $18(a0),d7                     block column
+        0x3A38, 0xFA84, 0xE845,           // move.w $fa84.w,d5 / asr.w #4,d5      cx
+        0x9E45, 0x5E47,                   // sub.w d5,d7 / addq.w #7,d7
+        0x0C47, 0x001F, 0x6216,           // cmpi.w #31,d7 / bhi.s skip           outside [cx-7, cx+24]
+        0x2686, 0x2E1D, 0x8EB8, 0x980C, 0x2887,   // (the original writes, $F2DE..$F2F3)
+        0xDC84, 0x2686, 0x2E1D, 0x8EB8, 0x980C, 0x2887,
+        0x4E75};                          // skip: rts
     std::vector<uint16_t> adj = {
         0x0641, e, 0x0440, e, 0xB240, 0x6F0C, 0x3229, 0x0030, 0xD269, 0x0032, 0xE241, 0x3001,
         0x3341, 0x0022, 0x3340, 0x0026, 0x3429, 0x0004, 0xB441, 0x6C02, 0x3401, 0xB440, 0x6F02,
@@ -194,8 +271,11 @@ std::vector<RomPatch> wide_patches(int E) {
         {0x06D786, {0x0C47, 0x0280}, {0x0C47, (uint16_t)(0x280 + E)}},
         // animated map blocks (Toyland)
         {0x00F338, {0x3601, 0xD668, 0x001C, 0xB642, 0x6500, 0x002C, 0x0642, 0x0014, 0xB242, 0x6222},
-                   {0x4EB9, 0x0007, (uint16_t)CAVE_ANIM, 0x6500, 0x002E, 0x4E71, 0x4E71, 0x4E71, 0x4E71, 0x4E71}},
+                   {0x4EB9, (uint16_t)(CAVE_ANIM >> 16), (uint16_t)CAVE_ANIM, 0x6500, 0x002E, 0x4E71, 0x4E71, 0x4E71, 0x4E71, 0x4E71}},
         {CAVE_ANIM, ff(cave_anim.size()), cave_anim},
+        {0x00F2DE, {0x2686, 0x2E1D, 0x8EB8, 0x980C, 0x2887, 0xDC84, 0x2686, 0x2E1D, 0x8EB8, 0x980C, 0x2887},
+                   {0x4EB9, 0x0007, (uint16_t)CAVE_W, 0x600E, 0x4E71, 0x4E71, 0x4E71, 0x4E71, 0x4E71, 0x4E71, 0x4E71}},
+        {CAVE_W, ff(cave_w.size()), cave_w},
         // "object on screen" test used for sound effects
         {0x00200C, {0x2238, 0xFA84, 0xB2A8, 0x0010, 0x6410, 0x0681, 0x0140, 0x0000, 0xB2A8, 0x0010, 0x6504},
                    {0x2228, 0x0010, 0x92B8, 0xFA84, 0x0681, e, 0x0000, 0x0C81, (uint16_t)(320 + 2 * E), 0x0000, 0x6404}},
