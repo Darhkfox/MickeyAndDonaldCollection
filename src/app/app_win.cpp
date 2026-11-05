@@ -297,6 +297,21 @@ LRESULT App::wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_SYSCOMMAND:
         if ((wp & 0xFFF0) == SC_KEYMENU) return 0;   // no beep/menu on Alt
         break;
+    // The launcher's logo / Patreon page is a link: a hand over it, a click opens it.
+    case WM_SETCURSOR:
+        if (LOWORD(lp) == HTCLIENT && mode_ == Mode::Launcher && !menu_.active()) {
+            POINT pt;
+            GetCursorPos(&pt);
+            ScreenToClient(h, &pt);
+            SetCursor(LoadCursorW(nullptr, over_launcher_link((float)pt.x, (float)pt.y) ? IDC_HAND : IDC_ARROW));
+            return TRUE;
+        }
+        break;
+    case WM_LBUTTONDOWN:
+        if (mode_ == Mode::Launcher && !menu_.active() &&
+            over_launcher_link((float)(short)LOWORD(lp), (float)(short)HIWORD(lp)))
+            open_patreon();
+        return 0;
     case WM_EXITSIZEMOVE:
         remember_monitor();   // dragging the window to another display selects that display
         return 0;

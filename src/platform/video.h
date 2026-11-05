@@ -47,6 +47,11 @@ public:
     // (normally the uploaded size). `alpha` fades it, `dim` darkens (0..1).
     void draw_game(int slot, Rect dst, ScaleFilter filter, float alpha = 1.0f, float dim = 0.0f);
 
+    // ---- A picture with transparency (the launcher's logo) --------------------
+    // 0xAARRGGBB, straight alpha; drawn texel for pixel, so upload it at the size it is shown.
+    void upload_image(const uint32_t* pixels, int w, int h);
+    void draw_image(Rect dst, float alpha = 1.0f);
+
     // ---- RetroArch slang shader presets (Windows, librashader.dll) ---------
     // A preset (.slangp) draws the main game picture (slot 0) in place of `filter`; empty path = off.
     bool slang_available();                                         // librashader.dll found

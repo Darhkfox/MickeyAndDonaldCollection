@@ -158,7 +158,8 @@
                       you've earned. See ACHIEVEMENTS below.
      Music Player ... The soundtracks of all three games (Left / Right
                       switches game).
-     Credits ........ Where to find me: YouTube, Reddit and GitHub.
+     Credits ........ Where to find me: YouTube, Reddit, GitHub, X and
+                      Patreon.
      Quit ........... Exit to the desktop.
 
   To start a game straight from a shortcut, make a shortcut to
@@ -588,6 +589,11 @@
      YouTube ... https://www.youtube.com/adhgaming
      Reddit .... u/Darhkwing
      GitHub .... https://github.com/Darhkfox
+     X ......... https://x.com/ADH_Gaming
+     Patreon ... https://www.patreon.com/c/TeamRedTail
+
+  The Team RedTail logo at the top left of the launcher opens the Patreon
+  page too (click it, or tap it on Android).
 
   The port's own code is released under the MIT licence; the source is on
   GitHub.

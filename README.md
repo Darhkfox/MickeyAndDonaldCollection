@@ -161,7 +161,8 @@ that fits the screen (2:1 on most phones).
 - 5 save-state slots per game (F5 / F9), fast forward (hold Tab or the right trigger, 4×), rewind (hold R
   or the left trigger, up to the last minute of play), screenshots (F12). Fast forward and rewind can each
   be switched off, and are only available while achievements are off.
-- Version 1.2 (shown in the launcher); the Credits page has links to the author.
+- Version 1.2 (shown in the launcher); the Credits page has links to the author. The Team RedTail logo at the
+  launcher's top left opens the [Patreon page](https://www.patreon.com/c/TeamRedTail) (click or tap it).
 
 ## Default controls
 
@@ -311,7 +312,8 @@ A log line every 5 seconds gives the frame rate and the work per frame (`adb log
 ## Credits and licences
 
 - PC port by Darhkfox — [YouTube](https://www.youtube.com/adhgaming) ·
-  [Reddit u/Darhkwing](https://www.reddit.com/user/Darhkwing) · [GitHub](https://github.com/Darhkfox).
+  [Reddit u/Darhkwing](https://www.reddit.com/user/Darhkwing) · [GitHub](https://github.com/Darhkfox) ·
+  [X](https://x.com/ADH_Gaming) · [Patreon](https://www.patreon.com/c/TeamRedTail).
 - The port's own code is released under the MIT licence (`LICENSE`). The Mega Drive core is written from
   scratch. UI text uses the system font (Segoe UI through DirectWrite on Windows, Android's own font on
   Android).

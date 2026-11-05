@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include "logo_data.h"
 
 namespace {
 std::string narrow(const std::wstring& w) { return to_utf8(w); }
@@ -28,6 +29,52 @@ std::string elide_name(Video& v, FontId font, const std::string& name, float max
     }
     return stem + "\xE2\x80\xA6" + ext;
 }
+
+const char* kPatreonShown = "patreon.com/TeamRedTail";
+const char* kPatreonUrl = "https://www.patreon.com/TeamRedTail";
+
+// The logo at w x h: each output pixel the average of the source area it covers (with alpha weighting).
+void resample_logo(std::vector<uint32_t>& out, int w, int h) {
+    static std::vector<uint32_t> src;
+    if (src.empty()) {
+        src.reserve((size_t)kLogoW * kLogoH);
+        for (size_t k = 0; k + 1 < sizeof(kLogoRle); k += 2) src.insert(src.end(), kLogoRle[k], kLogoPal[kLogoRle[k + 1]]);
+        src.resize((size_t)kLogoW * kLogoH);
+    }
+    out.assign((size_t)w * h, 0);
+    const float sx = (float)kLogoW / w, sy = (float)kLogoH / h;
+    for (int y = 0; y < h; y++) {
+        const float y0 = y * sy, y1 = y0 + sy;
+        for (int x = 0; x < w; x++) {
+            const float x0 = x * sx, x1 = x0 + sx;
+            float a = 0, r = 0, g = 0, b = 0, wsum = 0;
+            for (int v = (int)y0; v < kLogoH && v < y1; v++) {
+                const float wy = std::min(y1, v + 1.0f) - std::max(y0, (float)v);
+                for (int u = (int)x0; u < kLogoW && u < x1; u++) {
+                    const float wt = wy * (std::min(x1, u + 1.0f) - std::max(x0, (float)u));
+                    const uint32_t c = src[(size_t)v * kLogoW + u];
+                    const float ca = (c >> 24) * wt;
+                    a += ca; r += ((c >> 16) & 255) * ca; g += ((c >> 8) & 255) * ca; b += (c & 255) * ca;
+                    wsum += wt;
+                }
+            }
+            if (a <= 0 || wsum <= 0) continue;
+            auto ch = [](float v) { return (uint32_t)std::min(255.0f, v + 0.5f); };
+            out[(size_t)y * w + x] = ch(a / wsum) << 24 | ch(r / a) << 16 | ch(g / a) << 8 | ch(b / a);
+        }
+    }
+}
+}
+
+bool App::over_launcher_link(float x, float y) const {
+    const Rect& r = launcher_link_;
+    return r.w > 0 && x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+}
+
+void App::open_patreon() {
+    if (autotest_) return;   // scripted test runs never open a browser
+    open_url(kPatreonUrl);
+    menu_.toast("Opened Patreon in your browser");
 }
 
 void App::update_launcher(const UiInput& ui, double dt) {
@@ -40,7 +87,8 @@ void App::update_launcher(const UiInput& ui, double dt) {
     if (ui.down && s < N) s = N + 2;
     if (ui.up && s >= N) s = launcher_last_card_;
     bool go = ui.confirm;
-    if (ui.tap)   // touch: a card or button is chosen and used at once
+    if (ui.tap && over_launcher_link(ui.tap_x, ui.tap_y)) open_patreon();
+    else if (ui.tap)   // touch: a card or button is chosen and used at once
         for (int i = 0; i < N + kButtonCount; i++) {
             const Rect& r = launcher_hit_[i];
             if (ui.tap_x >= r.x && ui.tap_x < r.x + r.w && ui.tap_y >= r.y && ui.tap_y < r.y + r.h) { s = i; go = true; }
@@ -84,12 +132,34 @@ void App::draw_launcher() {
     for (float x = std::fmod(W * 0.5f, cell) - line * 0.5f; x < W; x += cell) video_.fill_rect({x, 0, line, H}, grid);
     for (float y = std::fmod(H * 0.5f, cell) - line * 0.5f; y < H; y += cell) video_.fill_rect({0, y, W, line}, grid);
 
-    // Title
+    // Title (narrower where it would leave the logo no room beside it)
     float ty0 = H * 0.035f;
-    float tscale = std::min(1.0f, W * 0.86f / std::max(1.0f, video_.measure_text(FontId::Huge, "Mickey & Donald Collection")));
-    tscale = std::min(tscale, 0.8f);
+    const float logo_m = H * 0.03f, title_max = std::min(W * 0.86f, W - 2 * (H * 0.16f + logo_m * 2));
+    const float title_w = std::max(1.0f, video_.measure_text(FontId::Huge, "Mickey & Donald Collection"));
+    float tscale = std::min(0.8f, std::max(W * 0.6f, title_max) / title_w);
+    tscale = std::min(tscale, W * 0.86f / title_w);
     video_.draw_text(FontId::Huge, W * 0.5f, ty0, "Mickey & Donald Collection", 0xFFF6F1E4, Align::Center, tscale);
     ty0 += video_.line_height(FontId::Huge, tscale);
+
+    // The Team RedTail logo, top left, the Patreon page under it: smaller where the title leaves less room
+    // beside it (none: not shown).
+    {
+        const float m = logo_m, room = (W - title_w * tscale) * 0.5f - m * 2;
+        const int lw = (int)std::min(room, H * 0.13f * kLogoW / kLogoH), lh = (int)std::lround((double)lw * kLogoH / kLogoW);
+        launcher_link_ = {};
+        if (lw > H * 0.06f && lh > 0) {
+            if (lw != logo_w_ || lh != logo_h_) { resample_logo(logo_px_, lw, lh); logo_w_ = lw; logo_h_ = lh; }
+            video_.upload_image(logo_px_.data(), lw, lh);   // (every frame: it survives a lost display device)
+            const float fw = video_.measure_text(FontId::Small, kPatreonShown);
+            const float fs = std::min(1.0f, std::min(lw * 1.7f, room) / std::max(1.0f, fw));
+            const float bw = std::max((float)lw, fw * fs);   // (the two centred on each other)
+            const float lx = std::round(m + (bw - lw) * 0.5f), ly = std::round(m);
+            video_.draw_image({lx, ly, (float)lw, (float)lh});
+            const float py = ly + lh + H * 0.004f;
+            video_.draw_text(FontId::Small, m + bw * 0.5f, py, kPatreonShown, 0xFF9AA4BA, Align::Center, fs);
+            launcher_link_ = {m, m, bw, py + video_.line_height(FontId::Small, fs) - m};
+        }
+    }
 #ifdef __ANDROID__
     const char* edition = "Android Edition";
 #else

@@ -87,6 +87,13 @@ const char* kGamePS[(int)ScaleFilter::Count] = {
 }
 )",
 };
+// draw_image: straight alpha, texel for pixel.
+const char* kImagePS = R"(void main() {
+    vec4 c = texelFetch(u_tex, clamp(ivec2(floor(src_pos())), ivec2(0), ivec2(u_src) - 1), 0).bgra;
+    o_col = vec4(c.rgb, c.a * u_alpha);
+}
+)";
+const int kImageSlot = 4;
 
 const char* kOverlayVS = R"(#version 300 es
 layout(location = 0) in vec2 a_pos;
@@ -223,12 +230,13 @@ struct Video::Impl {
     int w = 0, h = 0;
     bool vsync = true, in_frame = false, fonts_dirty = true;
 
-    GLuint prog_game[(int)ScaleFilter::Count] = {}, prog_ov = 0;
-    struct GameLoc { GLint dst, src, scale, origin, alpha, dim, h, tex; } gl_game[(int)ScaleFilter::Count] = {};
+    // (one more than the filters: the last is draw_image's)
+    GLuint prog_game[(int)ScaleFilter::Count + 1] = {}, prog_ov = 0;
+    struct GameLoc { GLint dst, src, scale, origin, alpha, dim, h, tex; } gl_game[(int)ScaleFilter::Count + 1] = {};
     GLint ov_screen = -1, ov_atlas = -1;
     GLuint vao_game = 0, vao_ov = 0, vb = 0, ib = 0;
 
-    struct Slot { GLuint tex = 0; int w = 0, h = 0, tw = 0, th = 0; } slots[4];
+    struct Slot { GLuint tex = 0; int w = 0, h = 0, tw = 0, th = 0; } slots[5];   // 4: the image (kImageSlot)
 
     GLuint atlas = 0;
     std::vector<uint8_t> atlas_cpu;
@@ -238,8 +246,8 @@ struct Video::Impl {
     std::vector<OVert> verts;
 
     bool create_pipeline() {
-        for (int i = 0; i < (int)ScaleFilter::Count; i++) {
-            prog_game[i] = link(kGameVS, std::string(kGameCommon) + kGamePS[i]);
+        for (int i = 0; i <= (int)ScaleFilter::Count; i++) {
+            prog_game[i] = link(kGameVS, std::string(kGameCommon) + (i < (int)ScaleFilter::Count ? kGamePS[i] : kImagePS));
             if (!prog_game[i]) return false;
             GameLoc& L = gl_game[i];
             GLuint p = prog_game[i];
@@ -294,9 +302,28 @@ struct Video::Impl {
         if (vao_ov) { glDeleteVertexArrays(1, &vao_ov); vao_ov = 0; }
     }
 
+    // A slot's picture in `dst`, through program `f` (a filter, or Count: the image's).
+    void draw_quad(const Slot& s, Rect dst, int f, float alpha, float dim) {
+        const Impl::GameLoc& L = gl_game[f];
+        glUseProgram(prog_game[f]);
+        glUniform4f(L.dst, dst.x / w * 2 - 1, 1 - dst.y / h * 2, (dst.x + dst.w) / w * 2 - 1, 1 - (dst.y + dst.h) / h * 2);
+        glUniform2f(L.src, (float)s.w, (float)s.h);
+        glUniform2f(L.scale, dst.w / s.w, dst.h / s.h);
+        glUniform2f(L.origin, dst.x, dst.y);
+        glUniform1f(L.alpha, std::min(alpha, 1.0f));
+        glUniform1f(L.dim, std::max(0.0f, std::min(dim, 1.0f)));
+        glUniform1f(L.h, (float)h);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, s.tex);
+        glUniform1i(L.tex, 0);
+        glBindVertexArray(vao_game);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        glBindVertexArray(0);
+    }
+
     // ---- game textures ---------------------------------------------------------
     void upload(int slot, const uint32_t* px, int fw, int fh, int pitch) {
-        if (slot < 0 || slot > 3 || !px || fw <= 0 || fh <= 0 || fw > 4096 || fh > 4096 || !gl) return;
+        if (slot < 0 || slot > 4 || !px || fw <= 0 || fh <= 0 || fw > 4096 || fh > 4096 || !gl) return;
         Slot& s = slots[slot];
         s.w = fw; s.h = fh;
         if (!s.tex) {
@@ -597,21 +624,18 @@ void Video::draw_game(int slot, Rect dst, ScaleFilter filter, float alpha, float
     int f = (int)filter;
     if (!s.tex || f < 0 || f >= (int)ScaleFilter::Count || alpha <= 0 || !I.prog_game[f]) return;
     I.flush();
-    const Impl::GameLoc& L = I.gl_game[f];
-    glUseProgram(I.prog_game[f]);
-    glUniform4f(L.dst, dst.x / I.w * 2 - 1, 1 - dst.y / I.h * 2, (dst.x + dst.w) / I.w * 2 - 1, 1 - (dst.y + dst.h) / I.h * 2);
-    glUniform2f(L.src, (float)s.w, (float)s.h);
-    glUniform2f(L.scale, dst.w / s.w, dst.h / s.h);
-    glUniform2f(L.origin, dst.x, dst.y);
-    glUniform1f(L.alpha, std::min(alpha, 1.0f));
-    glUniform1f(L.dim, std::max(0.0f, std::min(dim, 1.0f)));
-    glUniform1f(L.h, (float)I.h);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, s.tex);
-    glUniform1i(L.tex, 0);
-    glBindVertexArray(I.vao_game);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-    glBindVertexArray(0);
+    I.draw_quad(s, dst, f, alpha, dim);
+}
+
+void Video::upload_image(const uint32_t* pixels, int w, int h) { impl->upload(kImageSlot, pixels, w, h, w); }
+
+void Video::draw_image(Rect dst, float alpha) {
+    Impl& I = *impl;
+    Impl::Slot& s = I.slots[kImageSlot];
+    const int f = (int)ScaleFilter::Count;
+    if (!I.in_frame || !s.tex || dst.w <= 0 || dst.h <= 0 || alpha <= 0 || !I.prog_game[f]) return;
+    I.flush();
+    I.draw_quad(s, dst, f, alpha, 0.0f);
 }
 
 void Video::fill_rect(Rect r, uint32_t color) { fill_rect_gradient(r, color, color); }

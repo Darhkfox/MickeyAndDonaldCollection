@@ -128,16 +128,19 @@ void App::open_credits(bool from_launcher) {
     p.wide = true;
     p.items.push_back(MenuItem::header("Find me over at:"));
     auto link = [this](const char* label, const char* shown, const char* url) {
-        MenuItem it = MenuItem::action(label, [this, url]() {
+        MenuItem it = MenuItem::action(label, [this, label, url]() {
             if (autotest_) return;   // scripted test runs never open a browser
             open_url(url);
+            menu_.toast(std::string("Opened ") + label + " in your browser");
         }, "Enter / (A) opens it in your web browser.");
         it.value_text = [shown]() { return std::string(shown); };
         return it;
     };
-    p.items.push_back(link("YouTube", "https://www.youtube.com/adhgaming", "https://www.youtube.com/adhgaming"));
+    p.items.push_back(link("YouTube", "youtube.com/adhgaming", "https://www.youtube.com/adhgaming"));
     p.items.push_back(link("Reddit", "u/Darhkwing", "https://www.reddit.com/user/Darhkwing"));
-    p.items.push_back(link("GitHub", "https://github.com/Darhkfox", "https://github.com/Darhkfox"));
+    p.items.push_back(link("GitHub", "github.com/Darhkfox", "https://github.com/Darhkfox"));
+    p.items.push_back(link("X", "x.com/ADH_Gaming", "https://x.com/ADH_Gaming"));
+    p.items.push_back(link("Patreon", "patreon.com/c/TeamRedTail", "https://www.patreon.com/c/TeamRedTail"));
     if (from_launcher) menu_.open(std::move(p));
     else menu_.push(std::move(p));   // from the pause menu: Back returns to it
 }

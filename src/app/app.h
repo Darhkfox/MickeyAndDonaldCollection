@@ -133,6 +133,11 @@ private:
     int  launcher_last_card_ = 0;
     float launcher_anim_[kGameCount + 5] = {};
     Rect launcher_hit_[kGameCount + 5] = {};   // cards then buttons, where the last draw put them (taps)
+    Rect launcher_link_ = {};            // the Team RedTail logo and its Patreon page, top left (a link; empty: not shown)
+    std::vector<uint32_t> logo_px_;      // the logo resampled to the size it is shown at
+    int logo_w_ = 0, logo_h_ = 0;
+    bool over_launcher_link(float x, float y) const;
+    void open_patreon();
 #ifdef __ANDROID__
     TouchControls touch_;
     bool touch_active_ = true;           // the last input came from the touch screen (else a controller / keys)

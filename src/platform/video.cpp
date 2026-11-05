@@ -58,6 +58,10 @@ float3 sharp(float2 p, float2 s) {
 }
 float4 ps_nearest(float4 sv : SV_Position) : SV_Target { return finish(fetch(src_pos(sv))); }
 float4 ps_sharp(float4 sv : SV_Position) : SV_Target { return finish(sharp(src_pos(sv), max(g_scale, 1))); }
+float4 ps_image(float4 sv : SV_Position) : SV_Target {   // straight alpha, texel for pixel
+    float4 c = g_tex.Load(int3(clamp(int2(floor(src_pos(sv))), 0, int2(g_src) - 1), 0));
+    return float4(c.rgb, c.a * g_alpha);
+}
 float4 ps_bilinear(float4 sv : SV_Position) : SV_Target {
     return finish(g_tex.SampleLevel(g_linear, src_pos(sv) / g_src, 0).rgb);
 }
@@ -138,6 +142,7 @@ const char* const kGamePS[(int)ScaleFilter::Count] = { "ps_nearest", "ps_sharp",
 
 struct OVert { float x, y, u, v; uint32_t col; float p[4]; float mode; };
 static_assert(sizeof(OVert) == 40, "vertex layout");
+const int kImageSlot = 4;
 struct GameCB { float dst[4]; float src[2]; float scale[2]; float origin[2]; float alpha, dim; };
 const int kMaxQuads = 16384;   // per overlay draw call (16-bit indices)
 
@@ -193,10 +198,10 @@ struct Video::Impl {
     ID3D11DeviceContext* ctx = nullptr;
     IDXGISwapChain1* sc = nullptr;
     ID3D11RenderTargetView* rtv = nullptr;
-    ID3DBlob* blob_vs_game = nullptr, *blob_vs_ov = nullptr, *blob_ps_ov = nullptr;
+    ID3DBlob* blob_vs_game = nullptr, *blob_vs_ov = nullptr, *blob_ps_ov = nullptr, *blob_ps_image = nullptr;
     ID3DBlob* blob_ps_game[(int)ScaleFilter::Count] = {};
     ID3D11VertexShader* vs_game = nullptr, *vs_ov = nullptr;
-    ID3D11PixelShader* ps_game[(int)ScaleFilter::Count] = {}, *ps_ov = nullptr;
+    ID3D11PixelShader* ps_game[(int)ScaleFilter::Count] = {}, *ps_ov = nullptr, *ps_image = nullptr;
     ID3D11InputLayout* layout = nullptr;
     ID3D11Buffer* cb_game = nullptr, *cb_ov = nullptr, *vb = nullptr, *ib = nullptr;
     ID3D11SamplerState* samp[2] = {};
@@ -204,7 +209,7 @@ struct Video::Impl {
     ID3D11RasterizerState* rast = nullptr;
 
     struct Slot { ID3D11Texture2D* tex = nullptr; ID3D11ShaderResourceView* srv = nullptr; int w = 0, h = 0, tw = 0, th = 0;
-                  std::vector<uint32_t> cpu; } slots[4];
+                  std::vector<uint32_t> cpu; } slots[5];   // 0 the game, 1..3 launcher previews, 4 the image (kImageSlot)
 
     ID3D11Texture2D* atlas = nullptr;
     ID3D11ShaderResourceView* atlas_srv = nullptr;
@@ -233,7 +238,8 @@ struct Video::Impl {
         if (!blob_vs_game) blob_vs_game = compile("vs_game", "vs_4_0");
         if (!blob_vs_ov) blob_vs_ov = compile("vs_overlay", "vs_4_0");
         if (!blob_ps_ov) blob_ps_ov = compile("ps_overlay", "ps_4_0");
-        bool ok = blob_vs_game && blob_vs_ov && blob_ps_ov;
+        if (!blob_ps_image) blob_ps_image = compile("ps_image", "ps_4_0");
+        bool ok = blob_vs_game && blob_vs_ov && blob_ps_ov && blob_ps_image;
         for (int i = 0; i < (int)ScaleFilter::Count; i++) {
             if (!blob_ps_game[i]) blob_ps_game[i] = compile(kGamePS[i], "ps_4_0");
             ok = ok && blob_ps_game[i];
@@ -314,7 +320,8 @@ struct Video::Impl {
         if (!compile_all()) return false;
         bool ok = SUCCEEDED(dev->CreateVertexShader(blob_vs_game->GetBufferPointer(), blob_vs_game->GetBufferSize(), nullptr, &vs_game)) &&
                   SUCCEEDED(dev->CreateVertexShader(blob_vs_ov->GetBufferPointer(), blob_vs_ov->GetBufferSize(), nullptr, &vs_ov)) &&
-                  SUCCEEDED(dev->CreatePixelShader(blob_ps_ov->GetBufferPointer(), blob_ps_ov->GetBufferSize(), nullptr, &ps_ov));
+                  SUCCEEDED(dev->CreatePixelShader(blob_ps_ov->GetBufferPointer(), blob_ps_ov->GetBufferSize(), nullptr, &ps_ov)) &&
+                  SUCCEEDED(dev->CreatePixelShader(blob_ps_image->GetBufferPointer(), blob_ps_image->GetBufferSize(), nullptr, &ps_image));
         for (int i = 0; ok && i < (int)ScaleFilter::Count; i++)
             ok = SUCCEEDED(dev->CreatePixelShader(blob_ps_game[i]->GetBufferPointer(), blob_ps_game[i]->GetBufferSize(), nullptr, &ps_game[i]));
         if (!ok) return false;
@@ -388,7 +395,7 @@ struct Video::Impl {
         release(rast); release(blend); release(samp[0]); release(samp[1]);
         release(ib); release(vb); release(cb_ov); release(cb_game); release(layout);
         for (auto*& p : ps_game) release(p);
-        release(ps_ov); release(vs_ov); release(vs_game);
+        release(ps_image); release(ps_ov); release(vs_ov); release(vs_game);
         release(rtv); release(sc); release(ctx); release(dev);
     }
 
@@ -397,12 +404,37 @@ struct Video::Impl {
         verts.clear();
         release_device_objects();
         if (!create_device_objects()) { next_recover = GetTickCount64() + 1000; return false; }
-        for (int i = 0; i < 4; i++) if (!slots[i].cpu.empty()) upload_slot(i);
+        for (int i = 0; i < 5; i++) if (!slots[i].cpu.empty()) upload_slot(i);
         if (!atlas_cpu.empty()) create_atlas_texture();
         if (!slang_path.empty() && !slang.load(dev, slang_path, nullptr)) slang_path.clear();
         return true;
     }
     bool device_lost(HRESULT hr) const { return hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET; }
+
+    // The quad of a slot's picture in `dst`, through `ps`.
+    void draw_quad(const Slot& s, Rect dst, float alpha, float dim, ID3D11PixelShader* ps) {
+        GameCB cb;
+        cb.dst[0] = dst.x / w * 2 - 1;           cb.dst[1] = 1 - dst.y / h * 2;
+        cb.dst[2] = (dst.x + dst.w) / w * 2 - 1; cb.dst[3] = 1 - (dst.y + dst.h) / h * 2;
+        cb.src[0] = (float)s.w; cb.src[1] = (float)s.h;
+        cb.scale[0] = dst.w / s.w; cb.scale[1] = dst.h / s.h;
+        cb.origin[0] = dst.x; cb.origin[1] = dst.y;
+        cb.alpha = std::min(alpha, 1.0f);
+        cb.dim = std::max(0.0f, std::min(dim, 1.0f));
+        D3D11_MAPPED_SUBRESOURCE m;
+        if (FAILED(ctx->Map(cb_game, 0, D3D11_MAP_WRITE_DISCARD, 0, &m))) return;
+        memcpy(m.pData, &cb, sizeof(cb));
+        ctx->Unmap(cb_game, 0);
+        ctx->IASetInputLayout(nullptr);
+        ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+        ctx->VSSetShader(vs_game, nullptr, 0);
+        ctx->VSSetConstantBuffers(0, 1, &cb_game);
+        ctx->PSSetShader(ps, nullptr, 0);
+        ctx->PSSetConstantBuffers(0, 1, &cb_game);
+        ctx->PSSetShaderResources(0, 1, &s.srv);
+        ctx->PSSetSamplers(0, 2, samp);
+        ctx->Draw(4, 0);
+    }
 
     // ---- game textures ---------------------------------------------------------
     void upload_slot(int i) {
@@ -426,7 +458,7 @@ struct Video::Impl {
     }
 
     void upload(int slot, const uint32_t* px, int fw, int fh, int pitch) {
-        if (slot < 0 || slot > 3 || !px || fw <= 0 || fh <= 0 || fw > 4096 || fh > 4096) return;
+        if (slot < 0 || slot > 4 || !px || fw <= 0 || fh <= 0 || fw > 4096 || fh > 4096) return;
         Slot& s = slots[slot];
         s.w = fw; s.h = fh;
         s.cpu.resize((size_t)fw * fh);
@@ -673,7 +705,7 @@ void Video::shutdown() {
     for (auto& s : I.slots) { s.cpu.clear(); s.w = s.h = 0; }
     for (auto& chain : I.faces) for (auto*& f : chain) release(f);
     release(I.dw);
-    release(I.blob_vs_game); release(I.blob_vs_ov); release(I.blob_ps_ov);
+    release(I.blob_vs_game); release(I.blob_vs_ov); release(I.blob_ps_ov); release(I.blob_ps_image);
     for (auto*& b : I.blob_ps_game) release(b);
     I.atlas_cpu.clear();
     for (auto& f : I.fonts) f = FontData();
@@ -745,27 +777,17 @@ void Video::draw_game(int slot, Rect dst, ScaleFilter filter, float alpha, float
         if (dim > 0) fill_rect(dst, (uint32_t)(std::min(dim, 1.0f) * 255.0f + 0.5f) << 24);
         return;
     }
-    GameCB cb;
-    cb.dst[0] = dst.x / I.w * 2 - 1;           cb.dst[1] = 1 - dst.y / I.h * 2;
-    cb.dst[2] = (dst.x + dst.w) / I.w * 2 - 1; cb.dst[3] = 1 - (dst.y + dst.h) / I.h * 2;
-    cb.src[0] = (float)s.w; cb.src[1] = (float)s.h;
-    cb.scale[0] = dst.w / s.w; cb.scale[1] = dst.h / s.h;
-    cb.origin[0] = dst.x; cb.origin[1] = dst.y;
-    cb.alpha = std::min(alpha, 1.0f);
-    cb.dim = std::max(0.0f, std::min(dim, 1.0f));
-    D3D11_MAPPED_SUBRESOURCE m;
-    if (FAILED(I.ctx->Map(I.cb_game, 0, D3D11_MAP_WRITE_DISCARD, 0, &m))) return;
-    memcpy(m.pData, &cb, sizeof(cb));
-    I.ctx->Unmap(I.cb_game, 0);
-    I.ctx->IASetInputLayout(nullptr);
-    I.ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-    I.ctx->VSSetShader(I.vs_game, nullptr, 0);
-    I.ctx->VSSetConstantBuffers(0, 1, &I.cb_game);
-    I.ctx->PSSetShader(I.ps_game[f], nullptr, 0);
-    I.ctx->PSSetConstantBuffers(0, 1, &I.cb_game);
-    I.ctx->PSSetShaderResources(0, 1, &s.srv);
-    I.ctx->PSSetSamplers(0, 2, I.samp);
-    I.ctx->Draw(4, 0);
+    I.draw_quad(s, dst, alpha, dim, I.ps_game[f]);
+}
+
+void Video::upload_image(const uint32_t* pixels, int w, int h) { impl->upload(kImageSlot, pixels, w, h, w); }
+
+void Video::draw_image(Rect dst, float alpha) {
+    Impl& I = *impl;
+    Impl::Slot& s = I.slots[kImageSlot];
+    if (!I.in_frame || !s.srv || dst.w <= 0 || dst.h <= 0 || alpha <= 0) return;
+    I.flush();
+    I.draw_quad(s, dst, alpha, 0.0f, I.ps_image);
 }
 
 bool Video::slang_available() { return impl->slang.available(); }
