@@ -177,6 +177,18 @@ gets its previous frame back (seen: an entry starting at `cx+24` stayed stale fo
 at 16:9). CAVE_ANIM therefore also reports "not visible" for an entry that overlaps the queued column
 (`X/16+24` moving right, `(X+15)/16-8` moving left) in that frame; it animates one frame later. Rows need no
 such check (a queued row is 8 rows above or 24 below the camera, outside any visible entry).
+**Breaking blocks (v1.2 fix).** A block broken by a marble or a bounce goes through the same two writes:
+`$D66C` (run when `$F413` is set; the 2x2 group of map blocks at `$F34E`/`$F34C`, in px) clears it with
+`jsr $F2B4`, into the writer's loop past its setup, with `a0` not an animated-block entry. CAVE_W took the
+column from `$18(a0)`/`$1C(a0)` and so dropped the name-table write: in 16:9 and up a broken block stayed drawn
+(walkable, map cleared) until its column scrolled out and back (user report, Toyland 2's wall of yellow blocks
+at 21:9). CAVE_W (now at `$59160-$591AB`) tells the break by the return address on the stack: at its entry
+`44(sp)` is the caller of the writer's movem (`(sp)` = return into the loop, `4(sp)` = the row's d0,
+`8(sp)`..`43(sp)` = the movem), `$D6DE` for the break, and then takes the column from `$F34E` (index `1-d3`).
+This also keeps a block broken in the far columns at 21:9 (past `cx+24`) from being written into the wrapped
+slot of a live column on the left. Check `tools/qa/v111/toy2_break2.py` (breaks a ledge block and a far floor
+block through `$F413`): 16:9 and 21:9 0 mismatches between plane A and the map (the old build: the ledge block
+left drawn).
 Check (`tools/qa/v111/anim_check.py`, camera driven right and left at three heights, plane A name table
 against the RAM map over the live columns every frame): Toyland 1 and 2 at 16:10, 16:9, 2:1: 0 mismatches;
 21:9: 0 except column `cx+24`, which is drawn from the RAM map at that width (the old build: 256 cells, also
@@ -389,6 +401,7 @@ Code caves use the `$FF` fill at `$7FE6C-$7FFFF` (last code ends at `$7FE6A`; no
 CAVE_H `$7FE80-$7FE99`, CAVE_V `$7FE9A-$7FEA7`, CAVE_CAM `$7FEB0-$7FF3D`, CAVE_ANIM `$7FF40-$7FF73`.
 Since v1.1.1: CAVE_V `$7FE9A`, CAVE_CAM `$7FEB0`, CAVE_W `$7FF40-$7FF73`, CAVE_H `$7FF74-$7FFFB` (the
 turn-round version), CAVE_ANIM `$59110-$5915B` (padding after code; `$7FE6C-$7FE99` is free again).
+Since v1.2 (block breaks): CAVE_W `$59160-$591AB` (`$7FF40-$7FF73` is free again).
 The ROM checksum (`$18E`, verified by the boot code at `$31A`-`$342`, skipped only on soft reset) must be
 recomputed after patching: 16-bit sum of all big-endian words from `$200` to the end
 (`coi_wide_common.rom_checksum`; `patched_rom(E, clamp=True)` builds the complete patched image;

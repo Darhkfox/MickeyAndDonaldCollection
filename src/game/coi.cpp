@@ -137,8 +137,9 @@ const std::vector<RomPatch> kMidairJump = {{0x00C8B6, {0x000D}, {0x0005}}};
 // Tile streaming needs no change (the engine keeps the whole 512-px plane valid). The patches widen
 // sprite culling, the object spawn/delete windows, the animated-block visibility test, the SFX
 // "on screen" test, and clamp the camera E px inside each level (code caves in the $FF fill at the end).
-constexpr uint32_t CAVE_V = 0x7FE9A, CAVE_CAM = 0x7FEB0, CAVE_W = 0x7FF40, CAVE_H = 0x7FF74;
+constexpr uint32_t CAVE_V = 0x7FE9A, CAVE_CAM = 0x7FEB0, CAVE_H = 0x7FF74;
 constexpr uint32_t CAVE_ANIM = 0x059110;   // in the $FF padding at $59102-$591FF (code before, data from $59200)
+constexpr uint32_t CAVE_W = 0x059160;      // (after CAVE_ANIM, same padding)
 constexpr uint16_t SPAWN_X = 0xFAB4;   // the column trigger's own camera X (a word the game only clears)
 
 // The column trigger ($6D53C) spawns the cell column at X+$180 / X-$71 when X crosses a 128-px boundary. For the
@@ -207,6 +208,10 @@ std::vector<RomPatch> wide_patches(int E) {
     // column from the RAM map when it scrolls in, and beyond 2:1 the far columns are drawn from the map).
     // Before, entries had to lie inside those columns whole, and Toyland 2's 5-block jelly pits stayed frozen -
     // empty - in the right extension until they reached the 4:3 edge.
+    // A block that breaks ($D66C: a marble or a bounce clears a 2x2 group of map blocks at $F34E/$F34C) goes through the
+    // same writes (jsr $F2B4, into the writer's loop) with a0 not an entry: CAVE_W tells it by the return address on
+    // the stack (44(sp) = $D6DE: the loop's d0 and the writer's movem are above it) and takes its column from $F34E.
+    // (Before, broken blocks stayed drawn in widescreen: the column came from a0's junk.)
     // The column the streamer queued this frame ($F982 sets $FABF; VBlank copies it from a buffer filled before
     // the animation runs) would bring back the block's previous frame, so an entry that overlaps it waits a frame.
     std::vector<uint16_t> cave_anim = {   // in: d1 = X, d2 = camX/16, a0 = entry; out: carry = not visible
@@ -224,9 +229,14 @@ std::vector<RomPatch> wide_patches(int E) {
         0x023C, 0x00FE, 0x4E75,           // 40 vis: andi.b #$fe,ccr / rts
         0x003C, 0x0001, 0x4E75};          // 46 inv: ori.b #1,ccr / rts
     const std::vector<uint16_t> cave_w = {   // the two name-table writes of one block, for live columns only
-        0x3E28, 0x001C, 0x5347, 0x9E43,   // move.w $1c(a0),d7 / subq.w #1,d7 / sub.w d3,d7    index in the row
-        0xDE68, 0x0018,                   // add.w $18(a0),d7                     block column
-        0x3A38, 0xFA84, 0xE845,           // move.w $fa84.w,d5 / asr.w #4,d5      cx
+        0x0CAF, 0x0000, 0xD6DE, 0x002C,   // 00 cmpi.l #$D6DE,$2c(sp)               called by the block break?
+        0x660E,                           // 08 bne.s entry
+        0x7E01, 0x9E43,                   // 0A moveq #1,d7 / sub.w d3,d7          index in its 2-block row
+        0x3A38, 0xF34E, 0xE845, 0xDE45,   // 0E move.w $f34e.w,d5 / asr.w #4,d5 / add.w d5,d7   block column
+        0x600C,                           // 16 bra.s col
+        0x3E28, 0x001C, 0x5347, 0x9E43,   // 18 entry: move.w $1c(a0),d7 / subq.w #1,d7 / sub.w d3,d7   index in the row
+        0xDE68, 0x0018,                   // 20 add.w $18(a0),d7                  block column
+        0x3A38, 0xFA84, 0xE845,           // 24 col: move.w $fa84.w,d5 / asr.w #4,d5      cx
         0x9E45, 0x5E47,                   // sub.w d5,d7 / addq.w #7,d7
         0x0C47, 0x001F, 0x6216,           // cmpi.w #31,d7 / bhi.s skip           outside [cx-7, cx+24]
         0x2686, 0x2E1D, 0x8EB8, 0x980C, 0x2887,   // (the original writes, $F2DE..$F2F3)
@@ -274,7 +284,7 @@ std::vector<RomPatch> wide_patches(int E) {
                    {0x4EB9, (uint16_t)(CAVE_ANIM >> 16), (uint16_t)CAVE_ANIM, 0x6500, 0x002E, 0x4E71, 0x4E71, 0x4E71, 0x4E71, 0x4E71}},
         {CAVE_ANIM, ff(cave_anim.size()), cave_anim},
         {0x00F2DE, {0x2686, 0x2E1D, 0x8EB8, 0x980C, 0x2887, 0xDC84, 0x2686, 0x2E1D, 0x8EB8, 0x980C, 0x2887},
-                   {0x4EB9, 0x0007, (uint16_t)CAVE_W, 0x600E, 0x4E71, 0x4E71, 0x4E71, 0x4E71, 0x4E71, 0x4E71, 0x4E71}},
+                   {0x4EB9, (uint16_t)(CAVE_W >> 16), (uint16_t)CAVE_W, 0x600E, 0x4E71, 0x4E71, 0x4E71, 0x4E71, 0x4E71, 0x4E71, 0x4E71}},
         {CAVE_W, ff(cave_w.size()), cave_w},
         // "object on screen" test used for sound effects
         {0x00200C, {0x2238, 0xFA84, 0xB2A8, 0x0010, 0x6410, 0x0681, 0x0140, 0x0000, 0xB2A8, 0x0010, 0x6504},
