@@ -52,7 +52,6 @@ struct AchievementDef {
     const char* id;          // stable id stored in achievements.ini ("coi_timber")
     const char* name;
     const char* desc;
-    bool secret = false;     // shown as "???" until earned
     int target = 0;          // counted achievements: the count to reach (shown as progress), else 0
     bool set = false;        // the progress is a set of things found (bits; shown as how many), see AchievementCtx::marked
 };

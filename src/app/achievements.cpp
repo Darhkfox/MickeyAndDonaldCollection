@@ -28,8 +28,8 @@ const char* const kGrandTourGames[3] = {"coi_minnie", "qs_treasure", "woi_magici
 
 std::vector<AchievementDef> collection_achievements() {
     return {
-        {"all_grandtour", "Grand Tour", "Finish all three games.", false, 3},
-        {"all_complete", "Completionist", "Unlock every other achievement.", false, 0},
+        {"all_grandtour", "Grand Tour", "Finish all three games.", 3},
+        {"all_complete", "Completionist", "Unlock every other achievement.", 0},
     };
 }
 

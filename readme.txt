@@ -369,8 +369,7 @@
 
   53 achievements to earn across the collection. A pop-up announces each
   one as it happens, with what it was for; the launcher's Achievements
-  page and the pause menu list them all. Hidden ones show as "???" until
-  you earn them.
+  page and the pause menu list them all, each with what it takes.
 
   They're earned fair and square: while achievements are on (on by default;
   the switch is at the top of the Achievements page, and in Options),

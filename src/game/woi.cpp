@@ -391,22 +391,22 @@ public:
 
     std::vector<AchievementDef> achievements() const override {
         return {
-            {"woi_forest", "Out of the Box", "Clear the Enchanted Forest.", false, 0},
-            {"woi_mountains", "Mountain Mover", "Clear the Rocky Mountains.", false, 0},
-            {"woi_sea", "Sea Legs", "Clear Under the Sea.", false, 0},
-            {"woi_house", "Giant Steps", "Clear the Giant House.", false, 0},
-            {"woi_magician", "Curtain Call", "Defeat the Magician.", false, 0},
-            {"woi_mickey", "Mickey's Magic", "Finish the game as Mickey, from a new game.", false, 0},
-            {"woi_donald", "Donald's Magic", "Finish the game as Donald, from a new game.", false, 0},
-            {"woi_together", "Better Together", "Finish the game in two-player mode, from a new game.", false, 0},
-            {"woi_spotless", "Spotless Spell", "Beat any boss without losing a heart.", false, 0},
-            {"woi_carpet", "Magic Carpet Ace", "Clear the magic carpet ride without a hit.", false, 0},
-            {"woi_deck", "Full Deck", "Collect all 52 playing cards.", false, 52},
-            {"woi_hearts", "Heart of Gold", "Fill all 8 hearts.", false, 0},
-            {"woi_cape", "Cape Crusader", "Defeat 3 enemies with one swish of the cape.", true, 0},
-            {"woi_magic", "Hocus Pocus", "Cast a spell at a magic spot.", false, 0},
-            {"woi_hand", "Lend a Hand", "In two-player mode, help your partner up a ledge.", true, 0},
-            {"woi_detour", "Donald's Detour", "Play a stage only Donald's route reaches.", true, 0},
+            {"woi_forest", "Out of the Box", "Clear the Enchanted Forest.", 0},
+            {"woi_mountains", "Mountain Mover", "Clear the Rocky Mountains.", 0},
+            {"woi_sea", "Sea Legs", "Clear Under the Sea.", 0},
+            {"woi_house", "Giant Steps", "Clear the Giant House.", 0},
+            {"woi_magician", "Curtain Call", "Defeat the Magician.", 0},
+            {"woi_mickey", "Mickey's Magic", "Finish the game as Mickey, from a new game.", 0},
+            {"woi_donald", "Donald's Magic", "Finish the game as Donald, from a new game.", 0},
+            {"woi_together", "Better Together", "Finish the game in two-player mode, from a new game.", 0},
+            {"woi_spotless", "Spotless Spell", "Beat any boss without losing a heart.", 0},
+            {"woi_carpet", "Magic Carpet Ace", "Clear the magic carpet ride without a hit.", 0},
+            {"woi_deck", "Full Deck", "Collect all 52 playing cards.", 52},
+            {"woi_hearts", "Heart of Gold", "Fill all 8 hearts.", 0},
+            {"woi_cape", "Cape Crusader", "Defeat 3 enemies with one swish of the cape.", 0},
+            {"woi_magic", "Hocus Pocus", "Cast a spell at a magic spot.", 0},
+            {"woi_hand", "Lend a Hand", "In two-player mode, help your partner up a ledge.", 0},
+            {"woi_detour", "Donald's Detour", "Climb the Beanstalk, a stage only Donald's route reaches.", 0},
         };
     }
 

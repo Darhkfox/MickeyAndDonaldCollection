@@ -22,7 +22,7 @@ void App::ach_welcome() {
     p.title = "Achievements";
     p.subtitle = std::to_string(total) + " to earn across Castle of Illusion, QuackShot and World of Illusion";
     p.wide = true;
-    p.items.push_back(MenuItem::info("Beat the bosses, clear the worlds, pull off tricky moves and find the secret ones."));
+    p.items.push_back(MenuItem::info("Beat the bosses, clear the worlds, pull off tricky moves and find the secrets."));
     p.items.push_back(MenuItem::header("To keep them fair, while achievements are on"));
     p.items.push_back(MenuItem::info("Cheats, Level Select, Fast Forward and Rewind are switched off."));
     p.items.push_back(MenuItem::info("Save states still work. Turn achievements off any time on the Achievements page."));
@@ -188,12 +188,10 @@ MenuPage App::achievements_page(int game) {
             const bool have = ach_.unlocked(d.id);
             total++;
             got += have ? 1 : 0;
-            const bool hidden = d.secret && !have;
             std::string id = d.id;
             const int target = d.target;
             const bool set = d.set;
-            MenuItem it = MenuItem::action(hidden ? "???" : d.name, []() {},
-                                           hidden ? "Secret achievement: keep playing to find it." : d.desc);
+            MenuItem it = MenuItem::action(d.name, []() {}, d.desc);
             it.value_text = [this, id, target, set]() {
                 std::string on = ach_.unlocked_on(id);
                 if (!on.empty()) return std::string("\xE2\x9C\x93  ") + on;
