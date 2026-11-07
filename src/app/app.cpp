@@ -93,6 +93,7 @@ UiInput App::poll_ui(float dt) {
         if (p.pressed & PAD_LB) u.page_left = true;
         if (p.pressed & PAD_RB) u.page_right = true;
         u.pad_pressed |= p.pressed;
+        u.pad_buttons |= p.buttons;
     }
     bool* outs[4] = {&u.up, &u.down, &u.left, &u.right};
     for (int i = 0; i < 4; i++) {
