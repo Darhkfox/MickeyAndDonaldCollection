@@ -1,5 +1,7 @@
-// Android input (see input.h): keyboard keys arrive from the app's SDL event loop as Win32 virtual-key codes
+// Android input (see input.h): Keyboard keys arrive from the app's SDL event loop as Win32 virtual-key codes
 // (vk_from_scancode), controllers are read through SDL's GameController API in Xbox button positions.
+// Fall back to plain SDL_Joystick with a PlayStation-style button order so DualShock / DualSense
+// clones that are not in the gamecontrollerdb still work.
 #include "../input.h"
 #include "../keys.h"
 #include "sdl_keys.h"
@@ -11,6 +13,7 @@ struct Input::Impl {
     int last = 0, last_acc = 0;
     PadState pads[kMaxPads];
     SDL_GameController* ctl[kMaxPads] = {};
+    SDL_Joystick* joy[kMaxPads] = {};   // used when !GameController
     bool rescan = true;
 
     void set_key(int vk, bool down) {
@@ -18,23 +21,29 @@ struct Input::Impl {
         key[vk] = down;
     }
 
+    void close_slot(int i) {
+        if (ctl[i]) { SDL_GameControllerClose(ctl[i]); ctl[i] = nullptr; }
+        if (joy[i]) { SDL_JoystickClose(joy[i]); joy[i] = nullptr; }
+        pads[i] = PadState();
+    }
+
     void scan() {
         rescan = false;
-        for (int i = 0; i < kMaxPads; i++)
-            if (ctl[i] && !SDL_GameControllerGetAttached(ctl[i])) {
-                SDL_GameControllerClose(ctl[i]);
-                ctl[i] = nullptr;
-                pads[i] = PadState();
-            }
+        for (int i = 0; i < kMaxPads; i++) {
+            if (ctl[i] && !SDL_GameControllerGetAttached(ctl[i])) close_slot(i);
+            else if (joy[i] && !SDL_JoystickGetAttached(joy[i])) close_slot(i);
+        }
         for (int j = 0; j < SDL_NumJoysticks(); j++) {
-            if (!SDL_IsGameController(j)) continue;
             SDL_JoystickID id = SDL_JoystickGetDeviceInstanceID(j);
             bool open = false;
-            for (int i = 0; i < kMaxPads; i++)
+            for (int i = 0; i < kMaxPads; i++) {
                 if (ctl[i] && SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(ctl[i])) == id) open = true;
+                if (joy[i] && SDL_JoystickInstanceID(joy[i]) == id) open = true;
+            }
             if (open) continue;
-            for (int i = 0; i < kMaxPads; i++)
-                if (!ctl[i]) {
+            for (int i = 0; i < kMaxPads; i++) {
+                if (ctl[i] || joy[i]) continue;
+                if (SDL_IsGameController(j)) {
                     ctl[i] = SDL_GameControllerOpen(j);
                     if (ctl[i]) {
                         pads[i] = PadState();
@@ -42,41 +51,111 @@ struct Input::Impl {
                         const char* n = SDL_GameControllerName(ctl[i]);
                         pads[i].name = n ? n : "Controller";
                     }
-                    break;
+                } else {
+                    joy[i] = SDL_JoystickOpen(j);
+                    if (joy[i]) {
+                        pads[i] = PadState();
+                        pads[i].connected = true;
+                        const char* n = SDL_JoystickName(joy[i]);
+                        pads[i].name = n ? n : "Joystick";
+                    }
                 }
+                break;
+            }
         }
+    }
+
+    // PlayStation-style layout common for DualShock / DualSense and many clones when
+    // reported as a raw joystick (button indices from hidapi).
+    // 0=Square, 1=Cross, 2=Circle, 3=Triangle, 4=L1, 5=R1, 6=L2, 7=R2,
+    // 8=Share/Select, 9=Options/Start, 10=L3, 11=R3, 12=PS, 13=Touchpad.
+    static uint32_t map_ps_style(SDL_Joystick* j) {
+        static const struct { int btn; uint32_t bit; } map[] = {
+            {0, PAD_X}, {1, PAD_A}, {2, PAD_B}, {3, PAD_Y},
+            {4, PAD_LB}, {5, PAD_RB}, {6, PAD_LT}, {7, PAD_RT},
+            {8, PAD_BACK}, {9, PAD_START}, {10, PAD_LS}, {11, PAD_RS},
+            {12, PAD_GUIDE},
+        };
+        uint32_t b = 0;
+        for (auto& m : map)
+            if (m.btn < SDL_JoystickNumButtons(j) && SDL_JoystickGetButton(j, m.btn))
+                b |= m.bit;
+        // Hats as D-pad when present
+        if (SDL_JoystickNumHats(j) > 0) {
+            Uint8 hat = SDL_JoystickGetHat(j, 0);
+            if (hat & SDL_HAT_UP)    b |= PAD_UP;
+            if (hat & SDL_HAT_DOWN)  b |= PAD_DOWN;
+            if (hat & SDL_HAT_LEFT)  b |= PAD_LEFT;
+            if (hat & SDL_HAT_RIGHT) b |= PAD_RIGHT;
+        }
+        return b;
     }
 
     void poll_pad(int i) {
         PadState& p = pads[i];
-        SDL_GameController* c = ctl[i];
-        if (!c) { p = PadState(); return; }
-        static const struct { SDL_GameControllerButton b; uint32_t bit; } map[] = {
-            {SDL_CONTROLLER_BUTTON_DPAD_UP, PAD_UP}, {SDL_CONTROLLER_BUTTON_DPAD_DOWN, PAD_DOWN},
-            {SDL_CONTROLLER_BUTTON_DPAD_LEFT, PAD_LEFT}, {SDL_CONTROLLER_BUTTON_DPAD_RIGHT, PAD_RIGHT},
-            {SDL_CONTROLLER_BUTTON_A, PAD_A}, {SDL_CONTROLLER_BUTTON_B, PAD_B},
-            {SDL_CONTROLLER_BUTTON_X, PAD_X}, {SDL_CONTROLLER_BUTTON_Y, PAD_Y},
-            {SDL_CONTROLLER_BUTTON_LEFTSHOULDER, PAD_LB}, {SDL_CONTROLLER_BUTTON_RIGHTSHOULDER, PAD_RB},
-            {SDL_CONTROLLER_BUTTON_BACK, PAD_BACK}, {SDL_CONTROLLER_BUTTON_START, PAD_START},
-            {SDL_CONTROLLER_BUTTON_LEFTSTICK, PAD_LS}, {SDL_CONTROLLER_BUTTON_RIGHTSTICK, PAD_RS},
-            {SDL_CONTROLLER_BUTTON_GUIDE, PAD_GUIDE},
-        };
-        uint32_t b = 0;
-        for (auto& m : map)
-            if (SDL_GameControllerGetButton(c, m.b)) b |= m.bit;
-        if (SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 16000) b |= PAD_LT;
-        if (SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 16000) b |= PAD_RT;
-        p.lx = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTX) / 32767.0f;
-        p.ly = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTY) / 32767.0f;
-        if (p.ly < -0.5f) b |= PAD_LS_UP;
-        if (p.ly > 0.5f) b |= PAD_LS_DOWN;
-        if (p.lx < -0.5f) b |= PAD_LS_LEFT;
-        if (p.lx > 0.5f) b |= PAD_LS_RIGHT;
-        p.pressed = b & ~p.buttons;
-        p.buttons = b;
-        p.raw_pressed = p.pressed;
-        p.raw_buttons = b;
-        p.connected = true;
+        if (ctl[i]) {
+            SDL_GameController* c = ctl[i];
+            static const struct { SDL_GameControllerButton b; uint32_t bit; } map[] = {
+                {SDL_CONTROLLER_BUTTON_DPAD_UP, PAD_UP}, {SDL_CONTROLLER_BUTTON_DPAD_DOWN, PAD_DOWN},
+                {SDL_CONTROLLER_BUTTON_DPAD_LEFT, PAD_LEFT}, {SDL_CONTROLLER_BUTTON_DPAD_RIGHT, PAD_RIGHT},
+                {SDL_CONTROLLER_BUTTON_A, PAD_A}, {SDL_CONTROLLER_BUTTON_B, PAD_B},
+                {SDL_CONTROLLER_BUTTON_X, PAD_X}, {SDL_CONTROLLER_BUTTON_Y, PAD_Y},
+                {SDL_CONTROLLER_BUTTON_LEFTSHOULDER, PAD_LB}, {SDL_CONTROLLER_BUTTON_RIGHTSHOULDER, PAD_RB},
+                {SDL_CONTROLLER_BUTTON_BACK, PAD_BACK}, {SDL_CONTROLLER_BUTTON_START, PAD_START},
+                {SDL_CONTROLLER_BUTTON_LEFTSTICK, PAD_LS}, {SDL_CONTROLLER_BUTTON_RIGHTSTICK, PAD_RS},
+                {SDL_CONTROLLER_BUTTON_GUIDE, PAD_GUIDE},
+            };
+            uint32_t b = 0;
+            for (auto& m : map)
+                if (SDL_GameControllerGetButton(c, m.b)) b |= m.bit;
+            if (SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 16000) b |= PAD_LT;
+            if (SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 16000) b |= PAD_RT;
+            p.lx = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTX) / 32767.0f;
+            p.ly = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTY) / 32767.0f;
+            if (p.ly < -0.5f) b |= PAD_LS_UP;
+            if (p.ly > 0.5f) b |= PAD_LS_DOWN;
+            if (p.lx < -0.5f) b |= PAD_LS_LEFT;
+            if (p.lx > 0.5f) b |= PAD_LS_RIGHT;
+            p.pressed = b & ~p.buttons;
+            p.buttons = b;
+            p.raw_pressed = p.pressed;
+            p.raw_buttons = b;
+            p.connected = true;
+            return;
+        }
+        if (joy[i]) {
+            SDL_Joystick* j = joy[i];
+            uint32_t b = map_ps_style(j);
+            // Axes: left stick usually 0/1
+            if (SDL_JoystickNumAxes(j) >= 2) {
+                p.lx = SDL_JoystickGetAxis(j, 0) / 32767.0f;
+                p.ly = SDL_JoystickGetAxis(j, 1) / 32767.0f;
+                if (p.ly < -0.5f) b |= PAD_LS_UP;
+                if (p.ly > 0.5f) b |= PAD_LS_DOWN;
+                if (p.lx < -0.5f) b |= PAD_LS_LEFT;
+                if (p.lx > 0.5f) b |= PAD_LS_RIGHT;
+            } else {
+                p.lx = p.ly = 0;
+            }
+            // Some clones put L2/R2 on axes 2/3 or 4/5
+            if (SDL_JoystickNumAxes(j) >= 4) {
+                if (SDL_JoystickGetAxis(j, 2) > 16000) b |= PAD_LT;
+                if (SDL_JoystickGetAxis(j, 3) > 16000) b |= PAD_RT;
+            }
+            p.pressed = b & ~p.buttons;
+            p.buttons = b;
+            // Raw = actual button bits 0..31 for advanced rebinding if needed later
+            uint64_t raw = 0;
+            int nbtn = SDL_JoystickNumButtons(j);
+            if (nbtn > 64) nbtn = 64;
+            for (int bi = 0; bi < nbtn; bi++)
+                if (SDL_JoystickGetButton(j, bi)) raw |= (1ull << bi);
+            p.raw_pressed = raw & ~p.raw_buttons;
+            p.raw_buttons = raw;
+            p.connected = true;
+            return;
+        }
+        p = PadState();
     }
 };
 
@@ -85,14 +164,18 @@ Input::~Input() { shutdown(); delete impl; }
 
 bool Input::init(NativeWindow) {
     SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, "0");   // buttons by position (Nintendo pads too)
+    // Prefer the HIDAPI drivers for DualShock / DualSense when available.
+    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI, "1");
+    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS4, "1");
+    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS5, "1");
     if (!SDL_WasInit(SDL_INIT_GAMECONTROLLER)) SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER);
+    if (!SDL_WasInit(SDL_INIT_JOYSTICK)) SDL_InitSubSystem(SDL_INIT_JOYSTICK);
     impl->rescan = true;
     return true;
 }
 
 void Input::shutdown() {
-    for (auto*& c : impl->ctl) if (c) { SDL_GameControllerClose(c); c = nullptr; }
-    for (auto& p : impl->pads) p = PadState();
+    for (int i = 0; i < kMaxPads; i++) impl->close_slot(i);
     on_focus_lost();
 }
 

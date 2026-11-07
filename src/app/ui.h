@@ -13,6 +13,7 @@ struct UiInput {
     bool page_left = false, page_right = false;
     int  key_pressed = 0;          // raw VK pressed this frame (for rebinding)
     uint32_t pad_pressed = 0;      // normalised pad buttons pressed this frame
+    uint32_t pad_buttons = 0;      // normalised pad buttons currently held
     bool tap = false;              // touch screens: a tap at tap_x / tap_y (backbuffer pixels)
     float tap_x = 0, tap_y = 0;
     float drag = 0;                // vertical finger movement since the last frame (pixels)
