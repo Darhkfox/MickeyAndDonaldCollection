@@ -268,11 +268,18 @@ into it, and the MD+ COI ROM leaves it untouched.
   driven camera over every level, the same path at each width, starts every object at the same frame
   (`coi_drive19.py`); what remains are objects whose motion phase follows lag frames, and spawns the original makes
   only when it has a free slot.
-* **Dessert Land slot limit (known, not fixed).** Its `$D000` group (32 slots) is nearly full at 4:3 (30-31: 16
-  are the long-lived railing/background objects `$4D/$4E/$4F/$90`); the wider keep window holds 2-3 more objects
-  at 2:1 and 21:9, so a spawn can fail and a chocolate cake block (`$10`, an obstacle Mickey jumps onto, e.g.
-  x 1304/1344) is missing until its column is spawned again. A bot walk through the act: 0 failures at 4:3 and
-  16:9, 1 at 2:1, 2 at 21:9; the act can still be finished.
+* **Dessert Land slot limit (fixed in v1.3, GitHub issue #20).** Its `$D000` group (32 slots) is nearly full at 4:3
+  (30-31: 16 are the long-lived railing/background objects `$4D/$4E/$4F/$90`); the wider keep window held 2-3 more
+  objects, so a spawn could fail (`$6D67A`: no free slot, the entry skipped) and a chocolate cake block (`$10`, a
+  platform Mickey jumps onto: x 1304 and 2896, at the ends of the first and third blue bridges, and x 1344) was
+  missing until its column was spawned again - reported at 16:9 in v1.2, depending on what else was alive. A camera
+  sweep: 4:3 1 dropped spawn, 16:9 v1.2 6, 16:9 v1.3 1 (running objects leave at the original's keep window now), 21:9
+  11. Now (wide modes) a PC hook at `$6D67A` keeps the entry (`module_state[2..7]`, twelve spawned-byte addresses) and
+  after each spawner run (`$9808`) it is made in the first free slot of its group, as `$6D67C..$6D6A4` would (id, sub,
+  `+$24`, Y, X into a zeroed slot; spawned and due), while it is inside the keep window; entries that leave it, get
+  spawned or no longer pass the difficulty / respawn filters are forgotten, and the list is cleared by the initial
+  fill. In the sweep every dropped entry is then made within 1-150 px of camera travel (16:9 and 21:9). 4:3 is
+  unchanged (the original drops them).
 * `$1FF6` "object on screen" (camX < X <= camX+320, camY < Y <= camY+192) is only used to decide whether
   to play an enemy SFX (4 callers) — widened by patch S1 (optional).
 * Objects `$BE/$BF` (Dessert 1 background sprites that move with plane B, `$FDFC/$FE0C`): own window

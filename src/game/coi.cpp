@@ -489,6 +489,86 @@ void fill_model(MegaDrive& md) {
     }
 }
 
+// ---- spawns dropped for want of a slot (GitHub issue #20) ---------------------------------------------------------
+// The spawner gives up on an entry when its object group has no free slot ($6D67A: a2 = entry + 1): the object is
+// missing until its cell is spawned again. Dessert Land nearly fills the $D000 group (32) at 4:3, and wider views keep
+// a few more objects in, so a chocolate cake block - a platform at the end of a blue bridge - could be missing at 16:9.
+// In the wide modes such entries are kept (module_state[2..7]: twelve "spawned" byte addresses, 0 = none) and made as
+// soon as a slot of their group is free, while they are still inside the window the sprite builder keeps objects in.
+// They run at once (the original would have made them already).
+constexpr uint32_t SPAWN_NO_SLOT = 0x06D67A;
+constexpr int PENDING_FIRST = 2, PENDING_COUNT = 12;
+
+uint16_t pending_get(const MegaDrive& md, int i) {
+    const uint32_t w = md.module_state[PENDING_FIRST + i / 2];
+    return (uint16_t)(i & 1 ? w >> 16 : w);
+}
+void pending_set(MegaDrive& md, int i, uint16_t v) {
+    uint32_t& w = md.module_state[PENDING_FIRST + i / 2];
+    w = i & 1 ? (w & 0xFFFF) | ((uint32_t)v << 16) : (w & 0xFFFF0000u) | v;
+}
+void pending_clear(MegaDrive& md) {
+    for (int i = 0; i < PENDING_COUNT / 2; i++) md.module_state[PENDING_FIRST + i] = 0;
+}
+
+// Whether `sb` is an entry's "spawned" byte in the current layout (entries are 9 bytes, in the lists of the grid's cells)
+bool is_layout_byte(const MegaDrive& md, uint16_t sb) {
+    Layout L;
+    if (!layout_of(md, L)) return false;
+    bool seen[256] = {};
+    for (int c = 0; c < L.w * L.h; c++) {
+        const int li = md.ram8(0xFFCA04 + c);
+        if (!li || seen[li]) continue;
+        seen[li] = true;
+        const uint16_t p = (uint16_t)(L.lists + s16(md.ram16(L.lists + li * 2 - 2)));
+        const int n = md.ram8(0xFF0000 | p) + 1;
+        for (int i = 0; i < n; i++)
+            if ((uint16_t)(p + 1 + 9 * i + 3) == sb) return true;
+    }
+    return false;
+}
+
+void spawn_dropped(MegaDrive& md) {
+    const uint16_t sb = (uint16_t)(md.cpu.r[10] + 2);   // a2 = entry + 1
+    int empty = -1;
+    for (int i = 0; i < PENDING_COUNT; i++) {
+        const uint16_t v = pending_get(md, i);
+        if (v == sb) return;
+        if (!v && empty < 0) empty = i;
+    }
+    if (empty >= 0) pending_set(md, empty, sb);
+}
+
+// After the spawner: make what it dropped where a slot has come free (as $6D67C..$6D6A4 would have)
+void retry_dropped(MegaDrive& md, int E) {
+    const int diff = md.ram8(0xFFFF0D);
+    const int cx = s16(md.ram16(CAM + 4)), cy = s16(md.ram16(CAM));
+    for (int i = 0; i < PENDING_COUNT; i++) {
+        const uint16_t sb = pending_get(md, i);
+        if (!sb) continue;
+        const uint32_t e = 0xFF0000 | (uint16_t)(sb - 3), b = 0xFF0000 | sb;
+        const int flags = md.ram8(e), x = s16(md.ram16(e + 7)), y = s16(md.ram16(e + 5));
+        const bool gone = (md.ram8(b) & SB_SPAWNED) || !is_layout_byte(md, sb) ||
+                          (diff < 8 && ((flags >> diff) & 1)) || ((flags & 0x20) && !md.ram8(e + 4)) ||
+                          (uint16_t)(x + 0x80 + E - cx) >= 0x280 + 2 * E || (uint16_t)(y + 0x80 - cy) >= 0x280;
+        if (gone) { pending_set(md, i, 0); continue; }
+        const uint32_t base = flags & 0x80 ? 0xFFD000 : flags & 0x40 ? 0xFFDD80 : 0xFFD400;
+        const int slots = flags & 0x40 && !(flags & 0x80) ? 10 : 32;
+        for (int k = 0; k < slots; k++) {
+            const uint32_t obj = base + k * 0x40;
+            if (md.ram16(obj)) continue;
+            md.set_ram8(b, (uint8_t)(md.ram8(b) | SB_SPAWNED | SB_DUE));
+            md.set_ram8(obj + 1, md.ram8(e + 1));            // id
+            md.set_ram8(obj + 0x29, md.ram8(e + 2));         // sub
+            md.set_ram16(obj + 0x24, sb);
+            md.set_ram16(obj + 0x14, md.ram16(e + 5));       // Y
+            md.set_ram16(obj + 0x10, md.ram16(e + 7));       // X
+            pending_set(md, i, 0);
+            break;
+        }
+    }
+}
+
 bool in_view43(const MegaDrive& md, uint32_t obj) {
     const uint32_t ms = md.module_state[1];
     const int v = (ms & V43_KNOWN) ? (int16_t)(ms & 0xFFFF) : s16(md.ram16(CAM + 4));
@@ -569,11 +649,12 @@ void wide_objects(MegaDrive& md, int E) {
         md.set_ram8(sb, (uint8_t)(b & 0x0F));
     }
     md.remove_pc_hooks(MegaDrive::kHookModule);
-    if (E <= 0) return;
+    if (E <= 0) { pending_clear(md); return; }
     md.add_pc_hook(OBJ_UPDATE, [E](MegaDrive& m) { before_update(m, E); }, MegaDrive::kHookModule);
     md.add_pc_hook(OBJ_UPDATED, [E](MegaDrive& m) { after_update(m, E); }, MegaDrive::kHookModule);
-    md.add_pc_hook(SPAWNER_DONE, [](MegaDrive& m) { spawner_model(m); }, MegaDrive::kHookModule);
-    md.add_pc_hook(FILL_DONE, [](MegaDrive& m) { fill_model(m); }, MegaDrive::kHookModule);
+    md.add_pc_hook(SPAWNER_DONE, [E](MegaDrive& m) { spawner_model(m); retry_dropped(m, E); }, MegaDrive::kHookModule);
+    md.add_pc_hook(FILL_DONE, [](MegaDrive& m) { pending_clear(m); fill_model(m); }, MegaDrive::kHookModule);
+    md.add_pc_hook(SPAWN_NO_SLOT, [](MegaDrive& m) { spawn_dropped(m); }, MegaDrive::kHookModule);
     md.add_pc_hook(CAM_START, [](MegaDrive& m) {
         const int c = s16(m.ram16(CAM + 4)), lo = s16(m.ram16(0xFFFAB0)), hi = s16(m.ram16(0xFFFAB2));
         m.module_state[1] = V43_KNOWN | V43_START | (uint16_t)(lo <= hi ? std::clamp(c, lo, hi) : c);

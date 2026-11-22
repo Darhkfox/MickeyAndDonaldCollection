@@ -329,9 +329,6 @@ A log line every 5 seconds gives the frame rate and the work per frame (`adb log
 - At 21:9: sprites entering at the very left edge can appear up to 20 px late, more enemies wait in the wider
   margins, and QuackShot's 512-pixel rooms (Dracula, the Ghosts, Pete, the final boss and a few others) are
   narrower than the screen, so they show bars of 12 pixels at each side.
-- At 2:1 and 21:9, Castle of Illusion's Dessert Land can run short of object slots (it nearly fills them at
-  4:3, and the wider view keeps a few more objects alive), so a chocolate cake block can occasionally be
-  missing until you scroll away and back. The act can still be finished.
 - World of Illusion keeps its original camera in widescreen and slides the picture near level edges: for the
   first stretch of a level (40 px at 16:9, 64 px at 2:1) the scenery holds still while the player walks.
   There, water and cloud layers keep their own motion, a slower background can show a little more of its

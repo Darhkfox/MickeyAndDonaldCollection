@@ -592,9 +592,6 @@
          with Donald falling or stuck.
        - At 21:9, QuackShot's 512-pixel boss rooms are narrower than the
          screen, so they show bars of 12 pixels at each side.
-       - At 2:1 and 21:9, Castle of Illusion's Dessert Land can run short of
-         object slots, so a chocolate cake block can occasionally be missing
-         until you scroll away and back. The act can still be finished.
        - World of Illusion keeps its original camera and slides the picture
          near the level edges instead: for the first stretch of a level the
          scenery holds still while you walk, then scrolls normally.
