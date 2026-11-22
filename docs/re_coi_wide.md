@@ -241,6 +241,33 @@ into it, and the MD+ COI ROM leaves it untouched.
   turn points where an entry the 4:3 run has is missing, 22 levels: 21:9 104 → 29, 16:9 71 → 15. What is left is
   object behaviour, not the trigger: enemies spawned earlier wander off sooner, and Dessert Land runs out of
   object slots (below).
+* **Object timing (v1.3, GitHub issue #19).** Spawning E px earlier also started every object's AI E px of camera
+  travel earlier, so enemies were somewhere else by the time Mickey arrived; on Hard, Castle 2's fish under water and
+  the Clock Tower's bat under the first pistons were reported unavoidable at 16:9. Now (`wide_objects()` in coi.cpp,
+  PC hooks, wide modes only) an object that comes in before the original spawner would have spawned it runs its first
+  update (its set-up, so the sprite builder can draw it) and then *waits*: its update (`jsr (a1)` at `$192A`) is
+  skipped, its animation held (flag bit 1), and while it is inside the 4:3 view it is hidden (flag bit 2) - the
+  original doesn't have it yet. A model of the original spawner (hook after `jsr $6D52A` at `$9808`, and after the
+  initial fill at `$6D78C`) marks what the original would spawn this frame as *due*; at its next update the waiting
+  object skips once more (that is the original's first update, already run) and from then on runs exactly as in 4:3.
+  The state is in the entry's spawned byte (bit 0 the spawner's; the byte is cleared on delete; nothing else reads it):
+  bit 7 due, bit 6 waiting, bits 5/4 the object's own flag bits 1/2 while it waits. A layout object is one whose
+  `+$24` points at an entry whose id is its own (checked on every recorded clip: layout objects never change id;
+  defeated enemies become id 3 and run on). Waiting objects outside the widened keep window are deleted as `$1B12`
+  would (one this hides never reaches it; objects hidden by their own flag - invisible ones like Castle 2's fish maker -
+  are never deleted by position, in either mode). Running objects leave at the *original's* keep window (`$192C`: flag
+  bit 0 set when X - camX43 is outside [-128, 512)) unless the wide view could still show them (within 32 px of it:
+  only 21:9's left edge is inside that window), so an enemy left behind comes back afresh, as in 4:3, instead of going
+  on where it was. The model runs on the 4:3 camera: the wide one, except while the wide
+  camera stands at a limit the original's would pass (round starts, right ends, narrow rooms) - there it follows
+  Mickey's deadzone (`$9820`: screen x kept in [+2, +0]) inside the original range; the round's 4:3 start camera is
+  taken before CAVE_CAM clamps it (`CAVE_CAM+64`). `module_state[1]` keeps it (bit 16 known); a configure without it
+  known (4:3 until then, a 4:3 or older save state) counts every object already in as due. Checks: the trailer clips
+  from their level start at 0/40/108 give the same hits and end positions, every object starting on the 4:3 frame (a
+  frame off where the wide run's lag differs: it draws more) (`tools/qa/v13/clip_active.py`, `clip_diverge.py`); a
+  driven camera over every level, the same path at each width, starts every object at the same frame
+  (`coi_drive19.py`); what remains are objects whose motion phase follows lag frames, and spawns the original makes
+  only when it has a free slot.
 * **Dessert Land slot limit (known, not fixed).** Its `$D000` group (32 slots) is nearly full at 4:3 (30-31: 16
   are the long-lived railing/background objects `$4D/$4E/$4F/$90`); the wider keep window holds 2-3 more objects
   at 2:1 and 21:9, so a spawn can fail and a chocolate cake block (`$10`, an obstacle Mickey jumps onto, e.g.
@@ -276,8 +303,9 @@ With the shifted trigger they appear E px further in (e.g. $44 in Castle 2 appea
 At E=40 they are visible in either case; at E=20 the unpatched spawn would have been hidden. A per-object
 filter in `$6D612` would be needed to handle them; judged not worth it.
 
-Gameplay consequences of the object patches: objects are spawned (and start their AI) E px earlier in the
-direction of travel and are deleted E px later; positions/AI/collision are untouched. Side effect: the
+Gameplay consequences of the object patches: objects are spawned E px earlier in the direction of travel and are
+deleted E px later; positions/AI/collision are untouched. (Until v1.3 their AI started E px earlier too; now they
+wait for the original's moment - see "Object timing" above.) Side effect: the
 three attract-mode demos (rounds 06, 19, 02, recorded input) drift slightly — with the object patches demos
 2 and 3 take one extra hit; with the clamp patch too, demo 1 ends in a different place. Harmless (demos end
 on a timer), but a port that wants bit-exact demos would have to disable the patches while `$F40A` (demo) is set. Slot pressure checked:

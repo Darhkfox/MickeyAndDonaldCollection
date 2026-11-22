@@ -369,6 +369,217 @@ bool sync_camera_bounds(MegaDrive& md, int E) {
     return mn == tmin && mx == tmax;
 }
 
+// ---- widescreen: objects keep the original's timing (issue #19) -----------------------------------------------------
+// The wide spawner brings objects in E px of camera travel earlier (so none pop in at the widened edges), and their AI
+// started that much earlier too: an enemy had moved on by the time Mickey got there, and some encounters (Castle 2's
+// fish under water, the Clock Tower's bat under the first pistons) could no longer be passed unhurt. Now an object
+// that comes in before the original would have spawned it runs its first update (its set-up, so it can be drawn) and
+// then waits - drawn, its animation held, not updated - until a model of the original spawner spawns it. There its
+// first update would come in the next frame; it already ran, so that frame is skipped as well, and from then on the
+// object runs exactly as in 4:3. While it waits inside the 4:3 view (objects the original lets pop in there: stored in
+// a later cell on purpose) it is hidden, as the original doesn't have it yet.
+// The state is kept in the object's layout entry's "spawned" byte (bit 0 set by the spawner, the byte cleared when the
+// object is deleted, nothing else reads it): bit 7 due (the original has spawned it), bit 6 waiting, bits 5 / 4 the
+// object's own flag bits 1 (animation held) / 2 (hidden) while it waits. Defeated enemies (id 3) run on.
+// The model runs on the 4:3 camera: the wide one, except where the wide view stops E px inside the level (round
+// starts, right ends, narrow shafts) - there it follows Mickey's deadzone ($9820) inside the original range.
+constexpr uint32_t OBJ_UPDATE = 0x00192A, OBJ_UPDATED = 0x00192C, OBJ_DELETE = 0x001C94;  // jsr (a1) / after / delete
+constexpr uint32_t SPAWNER_DONE = 0x009808;   // (after jsr $6D52A in the gameplay handler, its only call)
+constexpr uint32_t FILL_DONE = 0x06D78C;      // the round's initial fill ($6D768) returns
+constexpr uint32_t CAM_START = CAVE_CAM + 64; // CAVE_CAM's clamp of the round's start camera (a1 = $FA80): move.w 4(a1),d2
+constexpr uint32_t CAM = 0xFFFA80;   // camera: +0 Y, +4 X, +$14/+$18 previous Y/X, +$1C/+$1E dY/dX, +$22/+$26 X range
+constexpr uint32_t DEADZONE = 0xFF9820;   // Mickey's screen x is kept in [+2, +0] (and y in [+6, +4])
+constexpr uint8_t SB_SPAWNED = 0x01, SB_HID = 0x10, SB_ANIM = 0x20, SB_WAIT = 0x40, SB_DUE = 0x80;
+constexpr uint32_t V43_KNOWN = 0x10000, V43_START = 0x20000;   // module_state[1]: the 4:3 camera X in the low word
+
+int s16(uint16_t v) { return (int16_t)v; }
+
+// The "spawned" byte of the layout object at `obj`, or 0 if it isn't one: +$24 points at it (entry +3), and the
+// entry's id (entry +1) is the object's - layout objects never change theirs (defeated enemies become id 3).
+uint32_t layout_byte(const MegaDrive& md, uint32_t obj) {
+    const uint16_t p = md.ram16(obj + 0x24);
+    if (p < 0xCA04) return 0;
+    const uint32_t sb = 0xFF0000 | p;
+    if (md.ram16(obj) != md.ram8(sb - 2) || !(md.ram8(sb) & SB_SPAWNED)) return 0;
+    return sb;
+}
+
+struct Layout { uint32_t lists; int w, h; };   // decompressed at $CA00 (docs/re_coi_wide.md section 3)
+
+bool layout_of(const MegaDrive& md, Layout& L) {
+    const int off = md.ram16(0xFFCA00);
+    L.w = md.ram8(0xFFCA02);
+    L.h = md.ram8(0xFFCA03);
+    L.lists = 0xFF0000 | (uint16_t)(0xCA00 + off);
+    return L.w > 0 && L.h > 0 && off >= 4 + L.w * L.h && 0xCA00 + off < 0x10000;
+}
+
+// What the original spawner ($6D612) spawns in cell (col, row): its entries the wide one has spawned become due.
+void mark_cell(MegaDrive& md, const Layout& L, int col, int row, int diff) {
+    if (col < 0 || row < 0 || col >= L.w || row >= L.h) return;
+    const int li = md.ram8(0xFFCA04 + row * L.w + col);
+    if (!li) return;
+    uint32_t p = 0xFF0000 | (uint16_t)(L.lists + s16(md.ram16(L.lists + li * 2 - 2)));
+    const int n = md.ram8(p) + 1;
+    p = 0xFF0000 | (uint16_t)(p + 1);
+    for (int i = 0; i < n; i++, p = 0xFF0000 | (uint16_t)(p + 9)) {
+        const int flags = md.ram8(p);
+        if (diff < 8 && ((flags >> diff) & 1)) continue;   // not on this difficulty
+        if ((flags & 0x20) && !md.ram8(p + 4)) continue;    // its respawns are used up
+        const uint8_t b = md.ram8(p + 3);
+        if (b & SB_SPAWNED) md.set_ram8(p + 3, b | SB_DUE);
+    }
+}
+
+// The 4:3 camera X this frame (and the last one's in `prev`).
+int camera43(MegaDrive& md, int& prev) {
+    const int cx = s16(md.ram16(CAM + 4)), px = s16(md.ram16(CAM + 0x18));
+    const int wmin = s16(md.ram16(CAM + 0x22)), wmax = s16(md.ram16(CAM + 0x26));
+    const int omin = s16(md.ram16(0xFFFAB0)), omax = s16(md.ram16(0xFFFAB2));
+    const uint32_t ms = md.module_state[1];
+    prev = (ms & V43_KNOWN) ? (int16_t)(ms & 0xFFFF) : px;
+    const bool at_min = cx <= wmin && omin < wmin, at_max = cx >= wmax && omax > wmax;
+    int v = cx;
+    if ((at_min || at_max) && std::abs(cx - px) < 64) {
+        const int mx = s16(md.ram16(0xFFDC10));
+        const int hi = s16(md.ram16(DEADZONE)), lo = s16(md.ram16(DEADZONE + 2));
+        v = prev;
+        if (lo <= hi) v = std::clamp(v, mx - hi, mx - lo);
+        const int a = at_max && !at_min ? wmax : omin, b = at_min && !at_max ? wmin : omax;
+        v = std::clamp(v, std::min(a, b), std::max(a, b));
+    }
+    md.module_state[1] = V43_KNOWN | (uint16_t)v;
+    return v;
+}
+
+// After the spawner ran: what the original's would have spawned this frame ($6D52A) becomes due.
+void spawner_model(MegaDrive& md) {
+    int vprev;
+    const int v = camera43(md, vprev);
+    Layout L;
+    if (md.ram8(0xFFF451) || !layout_of(md, L)) return;
+    const int diff = md.ram8(0xFFFF0D);
+    const int cy = s16(md.ram16(CAM)), py = s16(md.ram16(CAM + 0x14)), dy = s16(md.ram16(CAM + 0x1C));
+    const int cx = s16(md.ram16(CAM + 4)), px = s16(md.ram16(CAM + 0x18)), dx = s16(md.ram16(CAM + 0x1E));
+    if ((cy ^ py) & 0x80) {   // a cell row when Y crosses a 128-px line: the five columns around the camera
+        const int r = (int16_t)(cy + (dy >= 0 ? 0x180 : -0x71));
+        if (r >= 0)
+            for (int c = (v >> 7) - 1; c <= (v >> 7) + 3; c++) mark_cell(md, L, c, r >> 7, diff);
+    }
+    if ((v ^ vprev) & 0x80) {   // a cell column when X does
+        const bool right = v == cx && vprev == px ? dx >= 0 : v > vprev;
+        const int r = (int16_t)(v + (right ? 0x180 : -0x71));
+        if (r >= 0)
+            for (int y = (cy >> 7) - 1; y <= (cy >> 7) + 3; y++) mark_cell(md, L, r >> 7, y, diff);
+    }
+}
+
+// After the round's initial fill: the columns the original fills ($6D768: X-$71 .. X+$18F) are due.
+void fill_model(MegaDrive& md) {
+    Layout L;
+    if (!layout_of(md, L)) return;
+    const uint32_t ms = md.module_state[1];
+    const int v = (ms & V43_START) ? (int16_t)(ms & 0xFFFF) : s16(md.ram16(CAM + 4));
+    md.module_state[1] = V43_KNOWN | (uint16_t)v;
+    const int diff = md.ram8(0xFFFF0D), cy = s16(md.ram16(CAM));
+    for (int d = 0; d < 0x280; d += 0x80) {
+        const int r = (int16_t)(v + d - 0x71);
+        if (r >= 0)
+            for (int y = (cy >> 7) - 1; y <= (cy >> 7) + 3; y++) mark_cell(md, L, r >> 7, y, diff);
+    }
+}
+
+bool in_view43(const MegaDrive& md, uint32_t obj) {
+    const uint32_t ms = md.module_state[1];
+    const int v = (ms & V43_KNOWN) ? (int16_t)(ms & 0xFFFF) : s16(md.ram16(CAM + 4));
+    const int x = s16(md.ram16(obj + 0x10)), y = s16(md.ram16(obj + 0x14)), cy = s16(md.ram16(CAM));
+    return x >= v && x < v + 320 && y >= cy && y < cy + 224;
+}
+
+// Before an object's update (a0 = the object).
+void before_update(MegaDrive& md, int E) {
+    const uint32_t obj = 0xFF0000 | (md.cpu.r[8] & 0xFFFF);
+    const uint32_t sb = layout_byte(md, obj);
+    if (!sb) return;
+    const uint8_t b = md.ram8(sb);
+    if (!(b & SB_WAIT)) return;
+    uint8_t f = md.ram8(obj + 2);
+    if (b & SB_DUE) {   // the original spawned it last frame: its first update there is now, and that one has run
+        f = (uint8_t)((f & ~6) | (b & SB_ANIM ? 2 : 0) | (b & SB_HID ? 4 : 0));
+        md.set_ram8(obj + 2, f);
+        md.set_ram8(sb, (uint8_t)(b & ~(SB_WAIT | SB_ANIM | SB_HID)));
+        md.cpu.pc = OBJ_UPDATED;
+        return;
+    }
+    // Waiting. Out of the window the sprite builder keeps objects in ($1B12, widened), delete it as that would - it
+    // doesn't see it while this hides it. (Objects hidden by their own flag never go there: invisible ones, such as
+    // Castle 2's fish maker, stay wherever the camera goes.)
+    const int x = s16(md.ram16(obj + 0x10)), y = s16(md.ram16(obj + 0x14));
+    const int cx = s16(md.ram16(CAM + 4)), cy = s16(md.ram16(CAM));
+    if (!(f & 0x18) && !(b & SB_HID) &&
+        ((uint16_t)(x + 0x80 + E - cx) >= 0x280 + 2 * E || (uint16_t)(y + 0x80 - cy) >= 0x280)) {
+        md.cpu.pc = OBJ_DELETE;
+        return;
+    }
+    f = (uint8_t)((f & ~4) | ((b & SB_HID) || in_view43(md, obj) ? 4 : 0));
+    md.set_ram8(obj + 2, f);
+    md.cpu.pc = OBJ_UPDATED;
+}
+
+// After an object's update: one that came in before the original would have spawned it waits from now on. One that
+// runs and has left the window the original keeps objects in ($1B12: X - camX and Y - camY in [-128, 512)) is
+// deleted, as there - it comes back afresh when its cell is spawned again - unless the wide view could still show it
+// (21:9's left edge is 20 px inside that window). The sprite builder's wider window is for waiting objects.
+void after_update(MegaDrive& md, int E) {
+    const uint32_t obj = 0xFF0000 | (md.cpu.r[8] & 0xFFFF);
+    if (!md.ram16(obj)) return;
+    const uint32_t sb = layout_byte(md, obj);
+    if (!sb) return;
+    const uint8_t b = md.ram8(sb), f = md.ram8(obj + 2);
+    if (f & 1) return;
+    if (!(b & (SB_DUE | SB_WAIT))) {
+        md.set_ram8(sb, (uint8_t)(b | SB_WAIT | (f & 2 ? SB_ANIM : 0) | (f & 4 ? SB_HID : 0)));
+        md.set_ram8(obj + 2, (uint8_t)(f | 2 | (in_view43(md, obj) ? 4 : 0)));
+        return;
+    }
+    if ((b & SB_WAIT) || (f & 0x1C)) return;   // (hidden, screen-fixed and never-deleted objects: as the builder)
+    const uint32_t ms = md.module_state[1];
+    const int cx = s16(md.ram16(CAM + 4)), v = (ms & V43_KNOWN) ? (int16_t)(ms & 0xFFFF) : cx;
+    const int x = s16(md.ram16(obj + 0x10));
+    if ((uint16_t)(x + 0x80 - v) >= 0x280 && (x < cx - E - 32 || x >= cx + 320 + E + 32)) md.set_ram8(obj + 2, (uint8_t)(f | 1));
+}
+
+// Configure: hooks on for the wide modes. Objects already in when they weren't kept by them (4:3 until now, a state
+// from 4:3 or an older build: no known 4:3 camera) count as due; in 4:3 waiting ones get their own flags back.
+void wide_objects(MegaDrive& md, int E) {
+    const bool kept = (md.module_state[1] & V43_KNOWN) != 0;
+    if (E <= 0) md.module_state[1] = 0;
+    for (uint32_t obj = 0xFFD000; obj < 0xFFE000 && !(E > 0 && kept); obj += 0x40) {
+        const uint32_t sb = layout_byte(md, obj);
+        if (!sb) continue;
+        const uint8_t b = md.ram8(sb);
+        if (E > 0) {
+            if (!(b & (SB_DUE | SB_WAIT))) md.set_ram8(sb, (uint8_t)(b | SB_DUE));
+            continue;
+        }
+        if (b & SB_WAIT) {
+            const uint8_t f = md.ram8(obj + 2);
+            md.set_ram8(obj + 2, (uint8_t)((f & ~6) | (b & SB_ANIM ? 2 : 0) | (b & SB_HID ? 4 : 0)));
+        }
+        md.set_ram8(sb, (uint8_t)(b & 0x0F));
+    }
+    md.remove_pc_hooks(MegaDrive::kHookModule);
+    if (E <= 0) return;
+    md.add_pc_hook(OBJ_UPDATE, [E](MegaDrive& m) { before_update(m, E); }, MegaDrive::kHookModule);
+    md.add_pc_hook(OBJ_UPDATED, [E](MegaDrive& m) { after_update(m, E); }, MegaDrive::kHookModule);
+    md.add_pc_hook(SPAWNER_DONE, [](MegaDrive& m) { spawner_model(m); }, MegaDrive::kHookModule);
+    md.add_pc_hook(FILL_DONE, [](MegaDrive& m) { fill_model(m); }, MegaDrive::kHookModule);
+    md.add_pc_hook(CAM_START, [](MegaDrive& m) {
+        const int c = s16(m.ram16(CAM + 4)), lo = s16(m.ram16(0xFFFAB0)), hi = s16(m.ram16(0xFFFAB2));
+        m.module_state[1] = V43_KNOWN | V43_START | (uint16_t)(lo <= hi ? std::clamp(c, lo, hi) : c);
+    }, MegaDrive::kHookModule);
+}
+
 // Status bar (window plane, lines 192..223): POWER stays left, TRIES + ITEMS centred, SCORE right;
 // gaps repeat the blank columns 8..11; the border rows repeat their 16-px pattern.
 std::vector<int16_t> hud_map(int E, bool anchor, bool border) {
@@ -646,6 +857,7 @@ public:
         md.vdp.hook_host = &md;
         md.vdp.hook_flags = cfg.hud_anchor ? 1 : 0;
         md.module_state[0] = 1;   // re-check the camera range for this mode (see sync_camera_bounds)
+        wide_objects(md, cfg.ext);
     }
 
     void pre_frame(MegaDrive& md, const GameConfig& cfg) override {
