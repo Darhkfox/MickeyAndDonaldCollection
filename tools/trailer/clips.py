@@ -61,4 +61,8 @@ CLIPS = {
     'v11_md_forest': dict(game='coi', level=0, ext=40, n=600, pre=60, mdplus=True,
                           rom=MDPLUS_ROM['coi']),
     'v11_md_duckburg': dict(game='qs', level=0, ext=40, n=540, pre=60, mdplus=True, rom=MDPLUS_ROM['qs']),
+    # ---- v1.3 update trailer (cpu: the 68000's speed in %, CPU Overclock)
+    'v13_storm':    dict(game='coi', level=9, ext=0, n=600, pre=60),
+    'v13_starry':   dict(game='woi', level=35, var=0, ext=40, n=480, pre=60),
+    'v13_starry_oc': dict(game='woi', level=35, var=0, ext=40, n=480, pre=60, cpu=200),
 }

@@ -188,6 +188,7 @@ def replay(md, c, start, seq, check=True):
 def new_md(c):
     md = session(c['game'], c['ext'], c.get('cheats', ()), c.get('rom'))
     md.two = c.get('var', 0) == 2 and c['game'] == 'woi'
+    if c.get('cpu'): md.set_m68k_speed(c['cpu'])   # (CPU Overclock: not part of a save state, kept across loads)
     return md
 
 
