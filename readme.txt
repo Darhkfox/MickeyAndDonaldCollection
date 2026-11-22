@@ -32,6 +32,10 @@
         512 KB, CRC32 BA4E9FD0
      Quack Shot Starring Donald Duck (JUE) (REV 00) [!].bin
         512 KB, CRC32 88C8DD94   (the USA / World cartridge, first revision)
+     or Quack Shot Starring Donald Duck (JUE) (REV 01) [!].bin
+        1280 KB (1.25 MB), CRC32 1801098B   (the second revision)
+        With both QuackShot ROMs there, Play asks which one to start; each
+        keeps its own save states.
      World of Illusion Starring Mickey Mouse and Donald Duck (U) [!].bin
         1024 KB (1 MB), CRC32 921EBD1C
 
@@ -64,9 +68,8 @@
   WRONG VERSION?
      If a file is another version of one of the games, its card in the
      launcher says "Wrong ROM version", names the file and says what it is:
-     "the European version", "the Japanese version", "the REV 01 version",
-     or "a modified copy or a bad dump". Swap it for the USA ROM listed
-     above.
+     "the European version", "the Japanese version", or "a modified copy
+     or a bad dump". Swap it for the USA ROM listed above.
 
 
 --------------------------------------------------------------------------------
@@ -274,9 +277,21 @@
                          World of Illusion up to 2:1 (set wider from another
                          game, it uses 2:1). Title screens, menus, maps and
                          cut-scenes stay 4:3 (Castle of Illusion's castle
-                         hallway is shown wide).         (default: 16:9)
+                         hallway, and QuackShot's intro, map, pause and
+                         options screens are shown wide). In Castle of
+                         Illusion, an enemy that comes into the wider view
+                         before the original would have created it waits
+                         there until that moment, so encounters play as in
+                         4:3.                            (default: 16:9)
      Re-anchor HUD ..... In widescreen, moves the status bar items out to
                          the screen edges.               (default: ON)
+     QuackShot: Enemies Behind Donald
+                         Widescreen: enemies QuackShot brings in just
+                         behind Donald (birds, golden statues, Egypt's
+                         guards, snake charmers) start beyond the edge of
+                         the wide view and catch up with where they are at
+                         4:3. Off: they appear where the 4:3 game makes
+                         them, inside the wide view.     (default: OFF)
      Pixel Aspect ...... Square pixels, CRT (4:3 pixels) or Stretch to
                          window.                    (default: Square pixels)
      Integer Scaling ... Scale by whole numbers only, for perfectly even
@@ -317,7 +332,11 @@
                                                          (default: OFF)
      Remove Sprite Flicker .. Lifts the console's limit on sprites per line,
                          so busy scenes don't flicker.   (default: ON)
-     Show FPS .......... Frame rate in the corner.       (default: OFF)
+     Show FPS .......... Frame rate in the corner: in a game the game's own
+                         speed ("game 60.0 fps") and the display's. If the
+                         game figure drops below 60, this PC isn't keeping
+                         up: switch off High Frame Rate, Black Frame
+                         Insertion or a slang shader.    (default: OFF)
 
   COLOUR
      Colour Profile .... Accurate (measured Mega Drive output levels),
@@ -342,8 +361,46 @@
      Player 1's page) for Fast Forward and Rewind (greyed out while
      achievements are on), Menu, Quick Save, Quick Load and Screenshot.
      Highlight one, press Enter, then the new key or button (one already in
-     use swaps; Esc cancels). Also: Device (which pad), Left Stick Moves
-     (default ON) and Reset to Defaults.
+     use swaps; Esc or any controller button cancels a keyboard row). Also:
+     Device (which pad), Left Stick Moves (default ON), Menu Buttons (in
+     the menus, the bottom face button confirms - Xbox's layout, the
+     default - or the right one, Nintendo's), Other Controllers (PC: read
+     controllers that aren't Xbox-style; default ON) and Reset to Defaults.
+     A controller that sends random button presses by itself is ignored
+     (you're told which).
+
+  UPDATES
+     Check for Updates . Once a day the launcher looks up the latest release
+                         on GitHub (only the release's version number is
+                         read; nothing about you or your games is sent) and
+                         shows a badge when there's a newer version. Click or
+                         tap the badge, or use Latest Version below, to open
+                         its download page. Nothing is downloaded or
+                         installed by itself.             (default: ON)
+     Latest Version .... Opens the new version's page when there is one;
+                         otherwise checks now.
+
+  LAUNCHER & MENUS
+     Menu Style ........ Theatre: midnight velvet panels in gold frames,
+                         cartoon-style titles, and a starry stage with red
+                         curtains behind the games. Classic: the original
+                         dark panels and the grid.       (default: Theatre)
+     Game Covers ....... Your own cover pictures on the game cards in place
+                         of the live previews.           (default: OFF)
+     Custom Background . Your own picture behind the launcher (it fills the
+                         screen; the middle is kept).    (default: OFF)
+     Cover Shape ....... Whole Cover (all of it, with bars beside a tall
+                         box) or Fill the Frame (trimmed to fill; the top
+                         is kept).                       (default: Whole Cover)
+     No pictures are included: add your own, PNG or JPEG.
+       PC: Open Covers Folder opens the "covers" folder (next to the game,
+         or in %LOCALAPPDATA%\Mickey and Donald Collection). Name the covers
+         coi, qs and woi and the background "background", e.g. coi.png,
+         woi.jpg, background.png. They're read when you leave the page.
+       Android: Choose Cover (one per game) and Choose Background pick a
+         picture from your device.
+     A card shows its cover once its ROM is found. Covers also make the
+     launcher lighter on slow PCs and phones (no preview runs behind them).
 
   ACHIEVEMENTS
      Achievements ...... Earn achievements as you play. While this is on,
@@ -352,6 +409,11 @@
                          count from the next Reset Game.  (default: ON)
 
   SPEED
+     CPU Overclock ..... Off, 150%, 200% or 300%: speeds up the console's
+                         processor, so busy scenes no longer slow down as
+                         they do on a real console (the game figure in Show
+                         FPS stays at 60 either way). Music and game speed
+                         stay the same.                  (default: Off)
      Fast Forward ...... Hold Tab or the right trigger for 4x speed (the
                          key and button can be changed under Controls;
                          the row shows them). Only while achievements are
@@ -370,6 +432,13 @@
   53 achievements to earn across the collection. A pop-up announces each
   one as it happens, with what it was for; the launcher's Achievements
   page and the pause menu list them all, each with what it takes.
+
+  Export to CSV (on the Achievements page) writes an "achievements export"
+  folder: achievements.csv (ID, title, description, points, trophy type,
+  progress, unlocked and when, the badge pictures) and icons/ with each
+  achievement's badge, earned and locked - ready for PlayniteAchievements'
+  spreadsheet import. PC: next to the game (or in %LOCALAPPDATA%\Mickey and
+  Donald Collection); Android: Android/data/com.darhkfox.mickeydonald/files.
 
   They're earned fair and square: while achievements are on (on by default;
   the switch is at the top of the Achievements page, and in Options),
@@ -561,6 +630,22 @@
      the game (it needs the USA ROM listed at the top), or a file of the
      pack is missing or damaged. The game plays with its original music.
 
+  Menus close by themselves, or the game moves on its own
+     A controller is sending presses you didn't make. A Switch Pro
+     Controller used without Steam often does this once Steam (or another
+     program) has switched it to its full mode: reconnect it, or play it
+     through Steam. The game ignores a controller that sends random presses
+     and says so; if it still happens, switch Options > Controls - Player 1
+     > Other Controllers off (Xbox-style and Steam controllers keep
+     working), or unplug other controllers.
+
+  The game slows down
+     Switch Show FPS on (Options > Video). If "game" drops below 60, this PC
+     isn't keeping up: switch off High Frame Rate, Black Frame Insertion and
+     any slang shader (crt-royale is the heaviest), and close programs
+     running alongside. If it stays at 60, the slowdown is the game's own
+     (as on a console): CPU Overclock (Options) removes it.
+
   Black frame insertion flickers or pulses
      Every other refresh has to be black, exactly in step with the display.
      Play in fullscreen, keep the display at a fixed 120 Hz (switch G-Sync /
@@ -594,8 +679,16 @@
   The Team RedTail logo at the top left of the launcher opens the Patreon
   page too (click it, or tap it on Android).
 
+  Thanks to simplePsyduck for QuackShot REV 01 support and many QuackShot
+  widescreen fixes, from the Nintendo Switch port of this collection:
+     https://github.com/simplePsyduck/MickeyAndDonaldCollection-NX
+
   The port's own code is released under the MIT licence; the source is on
   GitHub.
+
+  The Theatre style's titles use Luckiest Guy by Astigmatic (Apache License
+  2.0, LuckiestGuy-LICENSE.txt). Cover pictures are read with stb_image by
+  Sean Barrett (public domain).
 
   Castle of Illusion, QuackShot and World of Illusion (c) 1990-1992 Sega.
   Mickey Mouse and Donald Duck (c) Disney. This is an unofficial fan

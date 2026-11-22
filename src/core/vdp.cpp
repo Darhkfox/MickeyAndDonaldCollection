@@ -200,7 +200,7 @@ void VDP::do_dma_68k() {
     // The 68000 is frozen while the VDP owns the bus.
     int slots = target == 1 ? (int)len * 2 : (int)len;
     int mclk = (int)((int64_t)slots * 3420 / dma_rate_bytes());
-    if (cpu_stall) cpu_stall(host, mclk / 7);
+    if (cpu_stall) cpu_stall(host, (int)((int64_t)mclk * 256 / m68_div));
 }
 
 void VDP::do_dma_fill(uint16_t data) {

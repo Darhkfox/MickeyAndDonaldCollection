@@ -5,14 +5,21 @@
 #pragma once
 #include <cstdint>
 #include <cstdio>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
 
+struct PackPatch {
+    std::wstring path;
+    uint32_t crc = 0;          // the ROM a .bps patch was made for (an .ips patch doesn't say: 0)
+};
+
 struct SoundtrackPack {
     std::string name;          // the pack's folder name (what the settings store)
     std::string game_id;       // "coi", "qs", ...
-    std::wstring dir, cue, patch;
+    std::wstring dir, cue, patch;   // patch: the first of `patches` (names the pack in caches)
+    std::vector<PackPatch> patches;   // a pack can carry one per release of the game (QuackShot REV 00 / REV 01)
     int tracks = 0;            // tracks in the .cue whose file is there
 };
 
@@ -28,6 +35,26 @@ std::string soundtrack_label(const std::string& pack_name);
 // The pack's tracks whose audio is there: number and a name (the cue's TITLE, else one made from the file name:
 // "28-Boss_JackInTheBox.wav" -> "Boss - Jack In The Box"; "Track n" for tracks sharing one file).
 std::vector<std::pair<int, std::string>> soundtrack_track_names(const SoundtrackPack& pack);
+
+class GameModule;
+struct PatchEdit;
+
+// The ROM that plays `variant` of a game with `pack`: the pack's patch for that release, or, when it only has one for
+// another release whose ROM is there (`roms`: by release, null when not found), that patch carried over
+// (GameModule::port_patch) and checked: the tunes it asks for must be the original patch's. `error` says why not.
+bool soundtrack_rom(GameModule* module, int variant, const std::vector<const std::vector<uint8_t>*>& roms,
+                    const SoundtrackPack& pack, std::vector<uint8_t>& out, std::string& error);
+// Whether soundtrack_rom() can build it (no patching done): the pack has a patch for the release, or for another
+// release that is there and that the module can carry over from.
+bool soundtrack_fits(GameModule* module, int variant, const std::vector<const std::vector<uint8_t>*>& roms,
+                     const SoundtrackPack& pack);
+// The bytes a patch writes: found by comparing a ROM with its patched self, or, for a BPS patch made only of copies of
+// the source and literal data (most are), read from the patch itself, which needs no ROM. `source_size`: the ROM it is for.
+std::vector<PatchEdit> patch_edits(const std::vector<uint8_t>& orig, const std::vector<uint8_t>& patched);
+bool bps_literal_edits(const std::wstring& path, std::vector<PatchEdit>& edits, uint32_t& source_size);
+
+// The CD track and loop flag a patched ROM asks for each music ID (read by running the game's own music request).
+std::map<int, std::pair<int, bool>> soundtrack_track_map(GameModule* module, const std::vector<uint8_t>& patched);
 
 // Applies a BPS or IPS patch to `rom`. BPS checks the source and result CRCs.
 bool apply_rom_patch(const std::vector<uint8_t>& rom, const std::wstring& patch_path, std::vector<uint8_t>& out,

@@ -189,6 +189,8 @@ API int mdt_frame_raw(void* h, uint16_t* out, int* w, int* hgt) {
 // High frame rate: draw K-1 in-between pictures with each frame (1 = off), and read one (k = 1 .. K-1; 0 = the
 // frame itself) as palette-converted pixels.
 API void mdt_set_sub_frames(void* h, int k) { ((Tool*)h)->md.vdp.sub_frames = k; }
+// CPU overclock (MegaDrive::set_m68k_speed): the 68000 at pct % of its speed.
+API void mdt_set_m68k_speed(void* h, int pct) { ((Tool*)h)->md.set_m68k_speed(pct); }
 API int mdt_sub_frame(void* h, int k, uint32_t* out, int* w, int* hgt) {
     Tool* t = (Tool*)h;
     VDP& v = t->md.vdp;
@@ -256,7 +258,13 @@ API void mdt_bp_add(void* h, uint32_t addr) {
         t->bp_log.push_back(b);
     });
 }
-API void mdt_bp_clear(void* h) { Tool* t = (Tool*)h; t->md.clear_pc_hooks(); t->bp_log.clear(); }
+// Runs without the game module's PC hooks from now on (tests: the behaviour without them).
+API void mdt_module_hooks_off(void* h) {
+    Tool* t = (Tool*)h;
+    t->md.block_module_hooks = true;
+    t->md.remove_pc_hooks(MegaDrive::kHookModule);
+}
+API void mdt_bp_clear(void* h) { Tool* t = (Tool*)h; t->md.remove_pc_hooks(MegaDrive::kHookTool); t->bp_log.clear(); }
 API int mdt_bp_log(void* h, uint32_t* out, int max) {   // 20 words per hit
     Tool* t = (Tool*)h;
     int n = (int)std::min<size_t>(max, t->bp_log.size());

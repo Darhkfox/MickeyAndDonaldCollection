@@ -303,14 +303,17 @@ LRESULT App::wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             POINT pt;
             GetCursorPos(&pt);
             ScreenToClient(h, &pt);
-            SetCursor(LoadCursorW(nullptr, over_launcher_link((float)pt.x, (float)pt.y) ? IDC_HAND : IDC_ARROW));
+            const bool link = over_launcher_link((float)pt.x, (float)pt.y) || over_update_badge((float)pt.x, (float)pt.y);
+            SetCursor(LoadCursorW(nullptr, link ? IDC_HAND : IDC_ARROW));
             return TRUE;
         }
         break;
     case WM_LBUTTONDOWN:
-        if (mode_ == Mode::Launcher && !menu_.active() &&
-            over_launcher_link((float)(short)LOWORD(lp), (float)(short)HIWORD(lp)))
-            open_patreon();
+        if (mode_ == Mode::Launcher && !menu_.active()) {
+            const float x = (float)(short)LOWORD(lp), y = (float)(short)HIWORD(lp);
+            if (over_launcher_link(x, y)) open_patreon();
+            else if (over_update_badge(x, y)) open_update_page();
+        }
         return 0;
     case WM_EXITSIZEMOVE:
         remember_monitor();   // dragging the window to another display selects that display

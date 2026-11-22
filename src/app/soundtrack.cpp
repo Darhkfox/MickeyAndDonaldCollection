@@ -1,5 +1,7 @@
 #include "soundtrack.h"
 #include "romfind.h"
+#include "../core/md.h"
+#include "../game/game.h"
 #include "sys.h"
 #include <algorithm>
 #include <cctype>
@@ -118,22 +120,27 @@ std::vector<SoundtrackPack> find_soundtracks(const std::vector<std::pair<std::st
         seen.push_back(dir);
         std::vector<DirEntry> entries;
         if (!list_dir(dir, entries)) return;
-        std::wstring cue, patch;
-        for (const DirEntry& e : entries) {
+        std::wstring cue;
+        SoundtrackPack pk;
+        for (const DirEntry& e : entries) {      // (a pack can have a patch for each release of its game)
             if (e.is_dir) continue;
             if (cue.empty() && has_ext(e.name, L".cue")) cue = path_join(dir, e.name);
-            if (patch.empty() && (has_ext(e.name, L".bps") || has_ext(e.name, L".ips"))) patch = path_join(dir, e.name);
+            if (!has_ext(e.name, L".bps") && !has_ext(e.name, L".ips")) continue;
+            PackPatch pp;
+            pp.path = path_join(dir, e.name);
+            if (has_ext(e.name, L".bps") && !bps_source_crc(pp.path, pp.crc)) continue;
+            pk.patches.push_back(pp);
         }
-        if (cue.empty() || patch.empty()) return;
-        SoundtrackPack pk;
-        pk.dir = dir; pk.cue = cue; pk.patch = patch;
+        if (cue.empty() || pk.patches.empty()) return;
+        std::sort(pk.patches.begin(), pk.patches.end(), [](const PackPatch& a, const PackPatch& b) { return a.path < b.path; });
+        pk.dir = dir; pk.cue = cue; pk.patch = pk.patches[0].path;
         pk.name = to_utf8(file_name(dir));
-        uint32_t crc = 0;
-        if (has_ext(patch, L".bps")) {
-            if (!bps_source_crc(patch, crc)) return;
-            for (const auto& g : games) if (g.second == crc) pk.game_id = g.first;
-        } else {
-            pk.game_id = game_from_name(file_name(dir) + L" " + file_name(patch) + L" " + file_name(cue));
+        for (const PackPatch& pp : pk.patches) {
+            if (pp.crc) {
+                for (const auto& g : games) if (g.second == pp.crc) pk.game_id = g.first;
+            } else if (pk.game_id.empty()) {
+                pk.game_id = game_from_name(file_name(dir) + L" " + file_name(pp.path) + L" " + file_name(cue));
+            }
         }
         if (pk.game_id.empty()) return;
         for (const CueTrack& t : parse_cue(cue))
@@ -510,4 +517,175 @@ void MdPlus::set_state(const std::string& s) {
     if (!play(track, (flags & 1) != 0, at)) return;
     paused_ = (flags & 2) != 0;
     volume_ = std::clamp(vol, 0, 255) / 255.0f;
+}
+
+// ---- patches for each release ---------------------------------------------------------------------------------
+std::map<int, std::pair<int, bool>> soundtrack_track_map(GameModule* module, const std::vector<uint8_t>& patched) {
+    std::map<int, std::pair<int, bool>> out;
+    std::unique_ptr<MegaDrive> md(new MegaDrive);
+    if (!md->load_rom(patched)) return out;
+    module->jukebox_boot(*md);
+    bool unlocked = false;
+    int cmd = 0;
+    md->on_cart_write = [&](MegaDrive&, uint32_t a, uint16_t v, int size) {
+        if (size != 2) return;
+        if (a == 0x3F7FA) unlocked = v == 0xCD54;
+        else if (a == 0x3F7FE && unlocked && ((v >> 8) == 0x11 || (v >> 8) == 0x12)) cmd = v;   // play once / looped
+    };
+    for (const SoundEntry& e : module->sounds()) {
+        if (!e.music) continue;
+        cmd = 0;
+        if (!module->music_request(*md, e.id)) break;
+        if (cmd & 0xFF) out[e.id] = {cmd & 0xFF, (cmd >> 8) == 0x12};
+    }
+    return out;
+}
+
+namespace {
+// The pack's patch for release `v` of the game (an .ips names no ROM: it is the first release's)
+const PackPatch* patch_for(GameModule* module, int v, const SoundtrackPack& pack) {
+    const std::vector<RomVariant> variants = module->rom_variants();
+    if (v < 0 || v >= (int)variants.size()) return nullptr;
+    for (const PackPatch& p : pack.patches) if (p.crc && p.crc == variants[v].crc) return &p;
+    if (v == 0) for (const PackPatch& p : pack.patches) if (!p.crc) return &p;
+    return nullptr;
+}
+const std::vector<uint8_t>* rom_of(const std::vector<const std::vector<uint8_t>*>& roms, int v) {
+    return v >= 0 && v < (int)roms.size() ? roms[v] : nullptr;
+}
+}  // namespace
+
+std::vector<PatchEdit> patch_edits(const std::vector<uint8_t>& orig, const std::vector<uint8_t>& patched) {
+    std::vector<PatchEdit> edits;
+    const size_t n = std::min(orig.size(), patched.size());
+    size_t i = 0;
+    while (i < n) {
+        if (orig[i] == patched[i]) { i++; continue; }
+        size_t j = i + 1, quiet = 0;       // a change, with the gaps of up to 8 equal bytes inside it
+        while (j < n && quiet < 8) {
+            if (orig[j] != patched[j]) quiet = 0; else quiet++;
+            j++;
+        }
+        j -= quiet;
+        PatchEdit e;
+        e.offset = (uint32_t)i;
+        e.bytes.assign(patched.begin() + i, patched.begin() + j);
+        edits.push_back(std::move(e));
+        i = j;
+    }
+    size_t end = patched.size();           // added after the end of the ROM (padding of $FF is not)
+    while (end > orig.size() && patched[end - 1] == 0xFF) end--;
+    if (end > orig.size()) {
+        PatchEdit e;
+        e.offset = (uint32_t)orig.size();
+        e.bytes.assign(patched.begin() + orig.size(), patched.begin() + end);
+        edits.push_back(std::move(e));
+    }
+    return edits;
+}
+
+bool bps_literal_edits(const std::wstring& path, std::vector<PatchEdit>& edits, uint32_t& source_size) {
+    std::vector<uint8_t> p;
+    if (!read_file(path, p) || p.size() < 16 || memcmp(p.data(), "BPS1", 4) != 0) return false;
+    size_t pos = 4;
+    const size_t end = p.size() - 12;
+    bool bad = false;
+    auto num = [&]() -> uint64_t {
+        uint64_t data = 0, shift = 1;
+        while (pos < end) {
+            const uint8_t x = p[pos++];
+            data += (x & 0x7F) * shift;
+            if (x & 0x80) return data;
+            shift <<= 7;
+            data += shift;
+        }
+        bad = true;
+        return 0;
+    };
+    const uint64_t src_size = num(), dst_size = num(), meta = num();
+    pos += (size_t)meta;
+    if (bad || src_size > (16u << 20) || dst_size > (16u << 20)) return false;
+    source_size = (uint32_t)src_size;
+    edits.clear();
+    size_t o = 0;
+    while (pos < end && !bad) {
+        const uint64_t d = num();
+        const size_t len = (size_t)(d >> 2) + 1;
+        if (bad || o + len > dst_size) return false;
+        switch (d & 3) {
+        case 0: o += len; break;                                       // SourceRead: left as it is
+        case 1: {                                                      // TargetRead: written
+            if (pos + len > end) return false;
+            PatchEdit e;
+            e.offset = (uint32_t)o;
+            e.bytes.assign(p.begin() + pos, p.begin() + pos + len);
+            edits.push_back(std::move(e));
+            pos += len; o += len;
+            break;
+        }
+        default: return false;                                         // copies from elsewhere: not just literal edits
+        }
+    }
+    return !bad && o == dst_size;
+}
+
+namespace {
+bool literal_patch(const PackPatch& p) {     // (cached: it is asked often)
+    static std::map<std::wstring, bool> cache;
+    auto it = cache.find(p.path);
+    if (it != cache.end()) return it->second;
+    std::vector<PatchEdit> e;
+    uint32_t sz = 0;
+    return cache[p.path] = p.crc != 0 && bps_literal_edits(p.path, e, sz);
+}
+}  // namespace
+
+bool soundtrack_fits(GameModule* module, int variant, const std::vector<const std::vector<uint8_t>*>& roms,
+                     const SoundtrackPack& pack) {
+    if (patch_for(module, variant, pack)) return true;
+    const int n = (int)module->rom_variants().size();
+    for (int v = 0; v < n; v++) {
+        const PackPatch* p = patch_for(module, v, pack);
+        if (v == variant || !p || !module->can_port_patch(v, variant)) continue;
+        if (rom_of(roms, v) || literal_patch(*p)) return true;   // (the patch's own bytes will do without the ROM)
+    }
+    return false;
+}
+
+bool soundtrack_rom(GameModule* module, int variant, const std::vector<const std::vector<uint8_t>*>& roms,
+                    const SoundtrackPack& pack, std::vector<uint8_t>& out, std::string& error) {
+    const std::vector<RomVariant> variants = module->rom_variants();
+    const std::vector<uint8_t>* mine = rom_of(roms, variant);
+    if (!mine) { error = "the ROM isn't there"; return false; }
+    if (const PackPatch* p = patch_for(module, variant, pack)) return apply_rom_patch(*mine, p->path, out, error);
+    for (int v = 0; v < (int)variants.size(); v++) {   // carry over the patch made for another release
+        const PackPatch* p = patch_for(module, v, pack);
+        const std::vector<uint8_t>* other = rom_of(roms, v);
+        if (v == variant || !p || !module->can_port_patch(v, variant)) continue;
+        std::vector<uint8_t> patched, ported = *mine;
+        std::vector<PatchEdit> edits;
+        uint32_t from_size = 0;
+        if (other) {                                   // the source ROM is there: the patch is applied and compared
+            if (!apply_rom_patch(*other, p->path, patched, error)) return false;
+            edits = patch_edits(*other, patched);
+            from_size = (uint32_t)other->size();
+        } else if (!literal_patch(*p) || !bps_literal_edits(p->path, edits, from_size)) {
+            continue;
+        }
+        const std::string label = variants[variant].label;
+        if (!module->port_patch(edits, from_size, other, ported)) {
+            error = "its patch can't be carried over to " + label + " (add a " + label + " patch to the pack)";
+            return false;
+        }
+        const auto got = soundtrack_track_map(module, ported);
+        // With the source ROM, the carried-over patch must ask for the very tunes the original does
+        if (got.empty() || (other && got != soundtrack_track_map(module, patched))) {
+            error = "its patch doesn't carry over to " + label + " (it needs a patch made for it)";
+            return false;
+        }
+        out = std::move(ported);
+        return true;
+    }
+    error = "the pack has no patch for " + (variants[variant].label.empty() ? std::string("this ROM") : variants[variant].label);
+    return false;
 }

@@ -132,6 +132,8 @@ bool Settings::load(const std::wstring& path) {
             else if (k == "hud_anchor") hud_anchor = iv != 0;
             else if (k == "show_fps") show_fps = iv != 0;
             else if (k == "black_frames") black_frames = iv != 0;
+            else if (k == "cpu_speed") cpu_speed = clampi(iv, 100, 400);
+            else if (k == "qs_spawn_fix") qs_spawn_fix = iv != 0;
             else if (k == "high_frame_rate") high_frame_rate = iv != 0;
             else if (k == "slang_preset") slang_preset = v;
         } else if (section == "audio") {
@@ -153,6 +155,8 @@ bool Settings::load(const std::wstring& path) {
             }
             if (k == "pad_index") pad_index[p] = clampi(iv, -1, Input::kMaxPads - 1);
             else if (k == "stick_as_dpad" && p == 0) stick_as_dpad = iv != 0;
+            else if (k == "menu_confirm_right" && p == 0) menu_confirm_right = iv != 0;
+            else if (k == "other_controllers" && p == 0) other_controllers = iv != 0;
         } else if (section.rfind("cheats.", 0) == 0) {
             cheats[section.substr(7)][k] = iv != 0;
         } else if (section == "touch") {
@@ -163,6 +167,16 @@ bool Settings::load(const std::wstring& path) {
             else if (k == "fast_forward") fast_forward = iv != 0;
             else if (k == "rewind") rewind = iv != 0;
             else if (k == "achievements") achievements = iv != 0;
+        } else if (section == "launcher") {
+            if (k == "menu_style") menu_style = clampi(iv, 0, 1);
+            else if (k == "covers") launcher_covers = iv != 0;
+            else if (k == "background") launcher_background = iv != 0;
+            else if (k == "cover_fill") cover_fill = iv != 0;
+            else if (k.compare(0, 8, "variant_") == 0) variant[k.substr(8)] = clampi(iv, 0, 7);
+        } else if (section == "updates") {
+            if (k == "check") check_updates = iv != 0;
+            else if (k == "checked_on") update_checked_on = v;
+            else if (k == "latest") update_latest = v;
         }
     }
     return true;
@@ -175,7 +189,7 @@ bool Settings::save(const std::wstring& path) const {
       << "\nfilter=" << filter << "\nwidescreen=" << (int)widescreen << "\naspect=" << (int)aspect
       << "\ninteger_scale=" << integer_scale << "\ncolor=" << (int)color << "\nbrightness=" << brightness
       << "\nsaturation=" << saturation << "\ngamma=" << gamma << "\nno_sprite_limit=" << no_sprite_limit
-      << "\nhud_anchor=" << hud_anchor << "\nshow_fps=" << show_fps << "\nblack_frames=" << black_frames
+      << "\nhud_anchor=" << hud_anchor << "\nshow_fps=" << show_fps << "\nblack_frames=" << black_frames << "\ncpu_speed=" << cpu_speed << "\nqs_spawn_fix=" << qs_spawn_fix
       << "\nhigh_frame_rate=" << high_frame_rate << "\nslang_preset=" << slang_preset << "\n\n[audio]\n"
       << "volume=" << volume << "\nmusic_volume=" << music_volume << "\nfilter=" << (int)audio_filter
       << "\nladder_effect=" << ladder_effect << "\nsoundtrack_volume=" << soundtrack_volume << "\n";
@@ -187,7 +201,8 @@ bool Settings::save(const std::wstring& path) const {
         for (int a = 0; a < ACT_COUNT; a++) o << "pad_" << kActionKeys[a] << "=0x" << std::hex << pad_buttons[p][a] << std::dec << "\n";
         o << "pad_index=" << pad_index[p] << "\n";
         if (p == 0) {
-            o << "stick_as_dpad=" << stick_as_dpad << "\n";
+            o << "stick_as_dpad=" << stick_as_dpad << "\nmenu_confirm_right=" << menu_confirm_right
+              << "\nother_controllers=" << other_controllers << "\n";
             for (int h = 0; h < HK_COUNT; h++)
                 o << "key_" << kHotkeyKeys[h] << "=" << hotkey_keys[h] << "\npad_" << kHotkeyKeys[h] << "=0x" << std::hex
                   << hotkey_pads[h] << std::dec << "\n";
@@ -199,6 +214,10 @@ bool Settings::save(const std::wstring& path) const {
     }
     o << "\n[general]\nlast_game=" << last_game << "\nfast_forward=" << fast_forward << "\nrewind=" << rewind
       << "\nachievements=" << achievements << "\n";
+    o << "\n[launcher]\nmenu_style=" << menu_style << "\ncovers=" << launcher_covers << "\nbackground=" << launcher_background
+      << "\ncover_fill=" << cover_fill << "\n";
+    for (auto& kv : variant) o << "variant_" << kv.first << "=" << kv.second << "\n";
+    o << "\n[updates]\ncheck=" << check_updates << "\nchecked_on=" << update_checked_on << "\nlatest=" << update_latest << "\n";
 #ifdef __ANDROID__
     o << "\n[touch]\nmode=" << touch_mode << "\nopacity=" << touch_opacity << "\n";
 #endif

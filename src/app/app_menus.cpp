@@ -7,12 +7,33 @@ std::string pct(int v) { return std::to_string(v) + "%"; }
 std::string signed_val(int v) { return (v > 0 ? "+" : "") + std::to_string(v); }
 }
 
+// A game whose releases are both there (QuackShot REV 00 and REV 01) has one card; this asks which one to play.
+void App::open_version_menu(int g, const std::vector<int>& have) {
+    GameSlot& gs = games_[g];
+    const std::vector<RomVariant> variants = gs.module->rom_variants();
+    MenuPage p;
+    p.title = gs.module->title();
+    p.subtitle = "Which version do you want to play?";
+    for (int v : have) {
+        const std::wstring& path = gs.roms[v].path;
+        const std::string file = to_utf8(path.substr(path.find_last_of(L"\\/") + 1));
+        if (v == gs.variant) p.sel = (int)p.items.size();
+        p.items.push_back(MenuItem::action(variants[v].label, [this, g, v]() { launch(g, v); }, file));
+    }
+    if (p.sel < 0) p.sel = 0;
+    menu_.open(std::move(p));
+}
+
 void App::open_pause_menu() {
     if (!session_) return;
     GameModule* m = session_->module();
     MenuPage p;
     p.title = m->title();
     p.subtitle = "Paused";
+    {   // a game with several releases says which one this is
+        const std::vector<RomVariant> variants = m->rom_variants();
+        if (variants.size() > 1 && current_ >= 0) p.subtitle += "  \xE2\x80\xA2  " + variants[games_[current_].variant].label;
+    }
     p.items.push_back(MenuItem::action("Resume", [this]() { menu_.close(); }));
     p.items.push_back(MenuItem::header("Save states"));
     p.items.push_back(MenuItem::choice("Slot", {"1", "2", "3", "4", "5"}, [this]() { return state_slot_ - 1; },
@@ -75,6 +96,8 @@ void App::open_options_menu(bool from_launcher) {
     p.items.push_back(MenuItem::action("Video", [this]() { menu_.push(video_page()); }, "Display mode, widescreen, scaling and filters."));
     p.items.push_back(MenuItem::action("Colour", [this]() { menu_.push(color_page()); }, "Colour profiles and picture adjustments."));
     p.items.push_back(MenuItem::action("Audio", [this]() { menu_.push(audio_page()); }, "Volume and sound-chip options."));
+    p.items.push_back(MenuItem::action("Launcher & Menus", [this]() { menu_.push(launcher_page()); },
+                                       "The menus' look, and your own game covers and launcher background."));
     // Player 2 only matters for World of Illusion: offer it from the launcher and inside 2-player games.
     bool two_player = from_launcher || (session_ && session_->module()->max_players() > 1);
     p.items.push_back(MenuItem::action(two_player ? "Controls - Player 1" : "Controls", [this]() { menu_.push(controls_page(0)); },
@@ -84,6 +107,18 @@ void App::open_options_menu(bool from_launcher) {
                                            [this]() { menu_.push(controls_page(1)); },
                                            "Second player's keys and gamepad (World of Illusion is the only 2-player game)."));
     p.items.push_back(MenuItem::header("Speed"));
+    {
+        static const int kSpeeds[] = {100, 150, 200, 300};
+        p.items.push_back(MenuItem::choice("CPU Overclock", {"Off", "150%", "200%", "300%"},
+                                           [this]() {
+                                               int k = 0;
+                                               for (int i = 0; i < 4; i++) if (settings_.cpu_speed >= kSpeeds[i]) k = i;
+                                               return k;
+                                           },
+                                           [this](int v) { settings_.cpu_speed = kSpeeds[v]; apply_settings(); },
+                                           "Speeds up the console's processor, so busy scenes no longer slow down as they "
+                                           "do on a real console. The game's music and speed stay the same."));
+    }
     // (beside each switch: what to hold, or why it is off)
     MenuItem ff = MenuItem::toggle("Fast Forward", [this]() { return settings_.fast_forward && !settings_.achievements; },
                                    [this](bool v) { settings_.fast_forward = v; },
@@ -100,6 +135,26 @@ void App::open_options_menu(bool from_launcher) {
     // (right under what it switches off)
     p.items.push_back(MenuItem::header("Achievements"));
     p.items.push_back(achievements_switch());
+    p.items.push_back(MenuItem::header("Updates"));
+    p.items.push_back(MenuItem::toggle("Check for Updates", [this]() { return settings_.check_updates; },
+                                       [this](bool v) {
+                                           settings_.check_updates = v;
+                                           apply_update_tag(settings_.update_latest);
+                                           if (v) check_for_update(false);
+                                       },
+                                       std::string("Once a day the launcher looks up the latest release on GitHub (nothing about you or "
+                                                   "your games is sent) and shows a badge when there's a newer version than this one (") +
+                                           kAppVersion + ")."));
+    MenuItem latest = MenuItem::action("Latest Version", [this]() {
+        if (!update_tag_.empty()) open_update_page();
+        else if (!updater_.running()) { check_for_update(true); menu_.toast("Checking for updates\xE2\x80\xA6", 2.0f); }
+    }, "Opens the new version's page on GitHub (saves and settings carry over), or checks now.");
+    latest.value_text = [this]() {
+        if (updater_.running()) return std::string("Checking\xE2\x80\xA6");
+        if (!update_tag_.empty()) return "v" + update_version() + " available - open its page";
+        return std::string("This is v") + kAppVersion + " - Check Now";
+    };
+    p.items.push_back(latest);
 #ifdef __ANDROID__
     p.items.push_back(MenuItem::header("Touch screen"));
     p.items.push_back(MenuItem::choice("On-screen Controls", {"When touched", "Always", "Off"}, [this]() { return settings_.touch_mode; },
@@ -141,8 +196,60 @@ void App::open_credits(bool from_launcher) {
     p.items.push_back(link("GitHub", "github.com/Darhkfox", "https://github.com/Darhkfox"));
     p.items.push_back(link("X", "x.com/ADH_Gaming", "https://x.com/ADH_Gaming"));
     p.items.push_back(link("Patreon", "patreon.com/c/TeamRedTail", "https://www.patreon.com/c/TeamRedTail"));
+    p.items.push_back(MenuItem::header("Thanks to:"));
+    p.items.push_back(link("simplePsyduck", "QuackShot REV 01 and widescreen fixes",
+                           "https://github.com/simplePsyduck/MickeyAndDonaldCollection-NX"));
     if (from_launcher) menu_.open(std::move(p));
     else menu_.push(std::move(p));   // from the pause menu: Back returns to it
+}
+
+MenuPage App::launcher_page() {
+    MenuPage p;
+    p.title = "Launcher & Menus";
+    p.wide = true;
+    p.items.push_back(MenuItem::choice("Menu Style", {"Theatre", "Classic"}, [this]() { return settings_.menu_style; },
+                                       [this](int v) { settings_.menu_style = v; apply_ui_style(); },
+                                       "Theatre: midnight velvet and gold, a starry stage behind the games. Classic: the original "
+                                       "dark panels."));
+    p.items.push_back(MenuItem::header("Your own pictures (none are included)"));
+    // (beside each switch: how many of its pictures were found)
+    MenuItem covers = MenuItem::toggle("Game Covers", [this]() { return settings_.launcher_covers; },
+                                       [this](bool v) { settings_.launcher_covers = v; load_launcher_art(true); },
+                                       "Your cover pictures on the game cards in place of the live previews.");
+    covers.value_text = [this]() {
+        if (!settings_.launcher_covers) return std::string();
+        int n = 0;
+        for (int g = 0; g < kGameCount; g++) n += has_cover(g) ? 1 : 0;
+        return n ? std::to_string(n) + " of " + std::to_string(kGameCount) + " found" : std::string("none found");
+    };
+    p.items.push_back(covers);
+    MenuItem bg = MenuItem::toggle("Custom Background", [this]() { return settings_.launcher_background; },
+                                   [this](bool v) { settings_.launcher_background = v; load_launcher_art(true); },
+                                   "Your picture behind the launcher (filling the screen; the middle is kept).");
+    bg.value_text = [this]() {
+        return settings_.launcher_background && !bg_art_.w ? std::string("not found") : std::string();
+    };
+    p.items.push_back(bg);
+    p.items.push_back(MenuItem::choice("Cover Shape", {"Whole Cover", "Fill the Frame"}, [this]() { return settings_.cover_fill ? 1 : 0; },
+                                       [this](int v) { settings_.cover_fill = v == 1; },
+                                       "Whole Cover shows all of it (bars beside a tall box); Fill the Frame trims it to fill."));
+#ifdef __ANDROID__
+    for (int g = 0; g < kGameCount; g++) {
+        const std::string id = games_[g].module->id();
+        p.items.push_back(MenuItem::action(std::string("Choose Cover: ") + games_[g].module->title(), [this, id]() { pick_image(id); },
+                                           "Pick a picture (PNG or JPEG) from your device for this game's card."));
+    }
+    p.items.push_back(MenuItem::action("Choose Background", [this]() { pick_image("background"); },
+                                       "Pick a picture (PNG or JPEG) from your device for the launcher's background."));
+#else
+    p.items.push_back(MenuItem::action("Open Covers Folder", [this]() {
+        make_dir(covers_dir());
+        if (!autotest_) open_url(to_utf8(covers_dir()).c_str());
+    }, "Put coi, qs, woi (the covers) and background there as .png or .jpg; they're read when you leave this page."));
+    p.items.push_back(MenuItem::info("Covers: coi.png, qs.png, woi.png    Background: background.png"));
+#endif
+    p.on_back = [this]() { load_launcher_art(true); save_settings(); };
+    return p;
 }
 
 MenuPage App::video_page() {
@@ -187,6 +294,16 @@ MenuPage App::video_page() {
                                     "In widescreen, moves the status bar items out to the screen edges.");
     hud.enabled = [this]() { return settings_.widescreen != WideMode::Off; };
     p.items.push_back(hud);
+    if (!session_ || std::string(session_->module()->id()) == "qs") {
+        MenuItem spawn = MenuItem::toggle("QuackShot: Enemies Behind Donald", [this]() { return settings_.qs_spawn_fix; },
+                                          [this, changed](bool v) { settings_.qs_spawn_fix = v; changed(); },
+                                          "Widescreen: enemies QuackShot brings in just behind Donald (birds, golden statues, "
+                                          "Egypt's guards, snake charmers) start beyond the edge of the wide view and catch up "
+                                          "with where they are at 4:3. Off: they appear where the 4:3 game makes them, which "
+                                          "a wide view shows.");
+        spawn.enabled = [this]() { return settings_.widescreen != WideMode::Off; };
+        p.items.push_back(spawn);
+    }
     p.items.push_back(MenuItem::choice("Pixel Aspect", {"Square pixels", "CRT (4:3 pixels)", "Stretch to window"},
                                        [this]() { return (int)settings_.aspect; }, [this](int v) { settings_.aspect = (AspectMode)v; }));
     p.items.push_back(MenuItem::toggle("Integer Scaling", [this]() { return settings_.integer_scale; },
@@ -359,8 +476,10 @@ MenuPage App::controls_page(int player) {
     std::vector<std::string> pads = {player == 0 ? "Auto (first free pad)" : "Auto (next free pad)"};
     for (int i = 0; i < Input::kMaxPads; i++) {
         const PadState& ps = input_.pad(i);
-        pads.push_back("Slot " + std::to_string(i + 1) + (ps.connected ? " - " + ps.name : std::string(" (empty)")));
+        pads.push_back("Slot " + std::to_string(i + 1) +
+                       (ps.connected ? " - " + ps.name + (ps.ignored ? " (ignored)" : "") : std::string(" (empty)")));
     }
+    if (last_input_pad_) p.sel = (int)p.items.size();   // (opened with a controller: start on its rows)
     p.items.push_back(MenuItem::choice("Device", pads, [this, player]() { return settings_.pad_index[player] + 1; },
                                        [this, player](int v) { settings_.pad_index[player] = v - 1; },
                                        "Auto takes the first connected pad the other player isn't using. Slots 1-4 are Xbox-style pads, 5-8 other controllers."));
@@ -399,9 +518,21 @@ MenuPage App::controls_page(int player) {
             it.hint = "Press Enter / (A), then the new pad button. Esc cancels.";
             p.items.push_back(it);
         }
-    if (player == 0)
+    if (player == 0) {
         p.items.push_back(MenuItem::toggle("Left Stick Moves", [this]() { return settings_.stick_as_dpad; },
                                            [this](bool v) { settings_.stick_as_dpad = v; }));
+        p.items.push_back(MenuItem::choice("Menu Buttons", {"Bottom confirms (Xbox)", "Right confirms (Nintendo)"},
+                                           [this]() { return settings_.menu_confirm_right ? 1 : 0; },
+                                           [this](int v) { settings_.menu_confirm_right = v == 1; },
+                                           "In the menus: which face button chooses; the other one goes back."));
+#ifdef _WIN32
+        MenuItem other = MenuItem::toggle("Other Controllers", [this]() { return settings_.other_controllers; },
+                                          [this](bool v) { settings_.other_controllers = v; input_.set_dinput_enabled(v); },
+                                          "Controllers that aren't Xbox-style (DirectInput: e.g. a Switch Pro or PlayStation pad "
+                                          "without Steam). Switch off if one sends presses you didn't make.");
+        p.items.push_back(other);
+#endif
+    }
     p.items.push_back(MenuItem::action("Reset to Defaults", [this, player]() {
         Settings d;
         for (int a = 0; a < ACT_COUNT; a++) {
@@ -483,5 +614,6 @@ MenuPage App::level_page() {
 void App::open_jukebox(int game, bool sfx) {
     if (game < 0 || game >= kGameCount || !games_[game].rom.found) return;
     if (!sfx) scan_soundtracks();   // (the Music Player offers the game's MD+ soundtracks too)
-    jukebox_.open(games_[game].module.get(), games_[game].rom.data, settings_, sfx, soundtracks_);
+    jukebox_.open(games_[game].module.get(), games_[game].rom.data, settings_, sfx, soundtracks_, games_[game].variant,
+                  variant_roms(game));
 }

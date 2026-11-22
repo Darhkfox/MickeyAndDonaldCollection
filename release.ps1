@@ -1,5 +1,6 @@
 # Makes the release zip, dist\Mickey-and-Donald-Collection-v<version>-win64.zip, holding only what is needed
-# to play: the executable, the player's readme, and librashader.dll with the bundled slang shader presets.
+# to play: the executable, the player's readme, the menus' title font, and librashader.dll with the bundled
+# slang shader presets.
 # No ROMs, settings, saves, screenshots or shortcuts.
 # Build first with build.bat.   Usage:  powershell -ExecutionPolicy Bypass -File release.ps1
 $ErrorActionPreference = "Stop"
@@ -13,7 +14,10 @@ $zipPath = Join-Path $root "dist\Mickey-and-Donald-Collection-v$version-win64.zi
 Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
 $files = @(
   @($exe, "DisneyClassics.exe"),
-  @((Join-Path $root "readme.txt"), "readme.txt")
+  @((Join-Path $root "readme.txt"), "readme.txt"),
+  # the Theatre menu style's title font (Luckiest Guy, Apache 2.0) and its licence
+  @((Join-Path $root "third_party\fonts\LuckiestGuy-Regular.ttf"), "LuckiestGuy-Regular.ttf"),
+  @((Join-Path $root "third_party\fonts\LICENSE.txt"), "LuckiestGuy-LICENSE.txt")
 )
 # Slang shader support: librashader.dll (loaded at run time) with its licence, and the bundled presets
 $bin = Split-Path $exe

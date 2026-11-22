@@ -125,10 +125,14 @@ struct Input::Impl {
 
     IDirectInput8W* di = nullptr;
     // settle: the next good read is a baseline, not presses (see poll_dinput)
-    struct DIPad { IDirectInputDevice8W* dev = nullptr; GUID inst = {}; bool seen = false, settle = true; };
+    // noise: button changes counted per second (trans, toggled = which buttons) to spot a device sending random presses
+    struct DIPad { IDirectInputDevice8W* dev = nullptr; GUID inst = {}; bool seen = false, settle = true;
+                   uint64_t last_raw = 0; bool raw_valid = false; int trans = 0; uint64_t toggled = 0;
+                   ULONGLONG window_start = 0; int quiet_windows = 0; bool noisy = false; };
     DIPad dpads[kDInputSlots];
     std::vector<DWORD> xinput_ids;
     bool enum_pending = false;
+    bool dinput_on = true;
     ULONGLONG enum_again_at = 0;    // second enumeration after a device change (late arrivals)
 
     void set_key(int vk, bool down) {
@@ -172,6 +176,7 @@ struct Input::Impl {
         dev->EnumObjects(enum_axis, dev, DIDFT_AXIS);
         dev->Acquire();
         DIPad& d = dpads[slot];
+        d = DIPad();
         d.dev = dev; d.inst = inst->guidInstance; d.seen = true; d.settle = true;
         PadState& p = pads[kFirstDInputSlot + slot];
         p = PadState();
@@ -227,6 +232,34 @@ struct Input::Impl {
             if (pov >= 22500 && pov <= 31500) b |= PAD_LEFT;
         }
         b |= stick(js.lX / 1000.0f, js.lY / 1000.0f, 0.15f, p.lx, p.ly);
+        // A device sending random presses: more button changes in a second, across more buttons, than any player
+        // makes (60+ changes over 6+ buttons; seen from a Switch Pro Controller left in its full report mode by Steam
+        // or another program, which DirectInput reads as garbage) is left out until it has been quiet for 3 s.
+        // (Otherwise the stray B / Back / Guide presses closed every menu a moment after it opened.)
+        const ULONGLONG now = GetTickCount64();
+        if (d.raw_valid) {
+            const uint64_t ch = raw ^ d.last_raw;
+            for (uint64_t c = ch; c; c &= c - 1) d.trans++;
+            d.toggled |= ch;
+        }
+        d.last_raw = raw;
+        d.raw_valid = true;
+        if (!d.window_start) d.window_start = now;
+        if (now - d.window_start >= 1000) {
+            int distinct = 0;
+            for (uint64_t c = d.toggled; c; c &= c - 1) distinct++;
+            if (d.trans >= 60 && distinct >= 6) { d.noisy = true; d.quiet_windows = 0; }
+            else if (d.noisy && ++d.quiet_windows >= 3 && d.trans == 0) { d.noisy = false; d.settle = true; }
+            else if (d.noisy && d.trans) d.quiet_windows = 0;
+            d.trans = 0; d.toggled = 0; d.window_start = now;
+        }
+        if (d.noisy || !dinput_on) {
+            p.buttons = p.pressed = 0; p.raw_buttons = p.raw_pressed = 0; p.lx = p.ly = 0;
+            p.ignored = true;
+            d.settle = true;
+            return;
+        }
+        p.ignored = false;
         // A device just opened, or back after a failed read, can report buttons down (some send all of them in
         // their first report, some drop out and come back every second or so): what it holds then is not a
         // press; a button counts once it has been let go and pressed again. (Otherwise B / Back / Guide from a
@@ -319,6 +352,8 @@ void Input::poll() {
     for (int i = 0; i < 4; i++) I.poll_xinput(i, now);
     for (int i = 0; i < kDInputSlots; i++) I.poll_dinput(i);
 }
+
+void Input::set_dinput_enabled(bool on) { impl->dinput_on = on; }
 
 void Input::on_device_change() {
     Impl& I = *impl;

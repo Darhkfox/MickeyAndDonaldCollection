@@ -44,6 +44,9 @@ struct Settings {
     bool        show_fps = false;
     bool        black_frames = false;       // black frame insertion (120 / 180 / 240 Hz displays)
     bool        high_frame_rate = false;    // in-between pictures on the refreshes between the game's frames (90 Hz+)
+    int         cpu_speed = 100;            // the 68000's speed, % (100 = a real console; more: CPU Overclock)
+    bool        qs_spawn_fix = false;       // QuackShot widescreen: enemies the game makes behind Donald start beyond the
+                                            // view's edge and catch up (GameConfig key "spawn_fix")
     std::string slang_preset;               // a slang shader preset (.slangp) in place of the filter: relative to the
                                             // exe's folder (or absolute), UTF-8; empty = off (Windows)
 
@@ -52,6 +55,7 @@ struct Settings {
     int         music_volume = 100;         // FM/PSG balance handled by chip gains
     int         soundtrack_volume = 70;     // MD+ soundtracks, relative to Volume
     std::map<std::string, std::string> soundtrack;   // game id -> soundtrack pack (folder name); none = the original
+    std::map<std::string, int> variant;     // game id -> the release played last (index in GameModule::rom_variants)
     AudioFilter audio_filter = AudioFilter::Model1;
     bool        ladder_effect = true;
 
@@ -60,6 +64,9 @@ struct Settings {
     uint32_t    pad_buttons[2][ACT_COUNT];
     int         pad_index[2] = {-1, -1};    // -1 = first connected pad (player 1) / second (player 2)
     bool        stick_as_dpad = true;
+    bool        menu_confirm_right = false;   // menus: the pad's right face button confirms, the bottom one goes back
+                                              // (Nintendo's layout); else bottom confirms (Xbox's)
+    bool        other_controllers = true;     // Windows: read DirectInput (non-Xbox) controllers
     int         hotkey_keys[HK_COUNT];      // a key and a pad button for each Hotkey (0 = none)
     uint32_t    hotkey_pads[HK_COUNT];
 
@@ -77,6 +84,18 @@ struct Settings {
     std::map<std::string, std::map<std::string, bool>> cheats;
 
     std::string last_game;
+
+    // Launcher and menus: the menus' look (MenuStyle), and the player's own pictures on the launcher (none are
+    // shipped: covers/<game id>.png or .jpg and covers/background.png in the data folder)
+    int         menu_style = 0;             // 0 Theatre, 1 Classic
+    bool        launcher_covers = false;    // the game cards show covers/<id> in place of the live previews
+    bool        launcher_background = false;   // the launcher's background is covers/background
+    bool        cover_fill = false;         // covers fill their frames (trimmed); else shown whole
+
+    // Updates: once a day the launcher looks up the latest release on GitHub (UpdateCheck)
+    bool        check_updates = true;
+    std::string update_checked_on;          // the day it last did ("2026-11-13") and what it found ("v1.3")
+    std::string update_latest;
 
     Settings();
     void reset_keys();

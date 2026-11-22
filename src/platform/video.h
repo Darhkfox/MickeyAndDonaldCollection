@@ -47,10 +47,12 @@ public:
     // (normally the uploaded size). `alpha` fades it, `dim` darkens (0..1).
     void draw_game(int slot, Rect dst, ScaleFilter filter, float alpha = 1.0f, float dim = 0.0f);
 
-    // ---- A picture with transparency (the launcher's logo) --------------------
-    // 0xAARRGGBB, straight alpha; drawn texel for pixel, so upload it at the size it is shown.
-    void upload_image(const uint32_t* pixels, int w, int h);
-    void draw_image(Rect dst, float alpha = 1.0f);
+    // ---- Pictures (the launcher's logo, the player's covers and background) ---------------
+    // 0xAARRGGBB with straight alpha, up to 4096 px a side; drawn smoothly at any size (mipmapped).
+    int  create_image(const uint32_t* pixels, int w, int h);   // an id (> 0), or 0
+    void free_image(int id);
+    // `src`: the part of the picture to draw, in its pixels (w or h 0: all of it).
+    void draw_image(int id, Rect dst, Rect src = {0, 0, 0, 0}, float alpha = 1.0f);
 
     // ---- RetroArch slang shader presets (Windows, librashader.dll) ---------
     // A preset (.slangp) draws the main game picture (slot 0) in place of `filter`; empty path = off.
@@ -76,6 +78,9 @@ public:
     // Font sizes are chosen relative to backbuffer height; call after resize
     // (done automatically inside resize()).
     void rebuild_fonts();
+    // Title and Huge in the display font (Luckiest Guy: LuckiestGuy-Regular.ttf next to the executable, or the
+    // Android app's assets) - the Theatre menu style. Returns whether that font is in use.
+    bool set_display_font(bool on);
 
     // Read back the current backbuffer as 0xAARRGGBB pixels (screenshots / tests).
     // Call after drawing and before end_frame(); flushes pending overlay draws.

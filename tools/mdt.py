@@ -63,6 +63,7 @@ _dll.mdt_coverage.argtypes = [C.c_void_p]
 _dll.mdt_coverage_clear.argtypes = [C.c_void_p]
 _dll.mdt_bp_add.argtypes = [C.c_void_p, C.c_uint32]
 _dll.mdt_bp_clear.argtypes = [C.c_void_p]
+if hasattr(_dll, "mdt_module_hooks_off"): _dll.mdt_module_hooks_off.argtypes = [C.c_void_p]   # (newer DLLs)
 _dll.mdt_bp_log.argtypes = [C.c_void_p, C.POINTER(C.c_uint32), C.c_int]
 _dll.mdt_watch.argtypes = [C.c_void_p, C.c_uint32, C.c_uint32]
 _dll.mdt_watch_log.argtypes = [C.c_void_p, C.POINTER(C.c_uint32), C.c_int]
@@ -94,6 +95,8 @@ if hasattr(_dll, 'mdt_view'):
     _dll.mdt_view.argtypes = [C.c_void_p, C.POINTER(C.c_int)]
 if hasattr(_dll, 'mdt_sub_frame'):
     _dll.mdt_set_sub_frames.argtypes = [C.c_void_p, C.c_int]
+    if hasattr(_dll, 'mdt_set_m68k_speed'):
+        _dll.mdt_set_m68k_speed.argtypes = [C.c_void_p, C.c_int]
     _dll.mdt_sub_frame.argtypes = [C.c_void_p, C.c_int, C.c_void_p, C.c_void_p, C.c_void_p]
 if hasattr(_dll, 'mdt_view_b'):
     _dll.mdt_view_b.argtypes = [C.c_void_p, C.POINTER(C.c_int)]
@@ -264,6 +267,10 @@ class MD:
         _dll.mdt_frame(self.h, buf, C.byref(w), C.byref(h))
         return w.value, h.value, list(buf)
 
+    def set_m68k_speed(self, pct):
+        """CPU overclock: the 68000 at pct % of its speed (100 = the console's)"""
+        _dll.mdt_set_m68k_speed(self.h, pct)
+
     def set_sub_frames(self, k):
         """high frame rate: K-1 in-between pictures drawn with each frame (1 = off)"""
         _dll.mdt_set_sub_frames(self.h, k)
@@ -290,6 +297,9 @@ class MD:
 
     def bp(self, addr):
         _dll.mdt_bp_add(self.h, addr)
+
+    def module_hooks_off(self):
+        _dll.mdt_module_hooks_off(self.h)
 
     def bp_clear(self):
         _dll.mdt_bp_clear(self.h)

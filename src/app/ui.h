@@ -100,7 +100,19 @@ private:
     void move(MenuPage& p, int dir);
 };
 
+// The menus' look (Settings::menu_style), for everything drawn with these helpers: Theatre (midnight velvet, gold
+// trim, the display font's titles) or Classic (the original dark slate panels).
+enum UiStyle : int { kStyleTheatre = 0, kStyleClassic = 1 };
+void set_ui_style(int style);
+int ui_style();
+// Theatre's colours
+constexpr uint32_t kGold = 0xFFF0C04A, kGoldDeep = 0xFFC08A26, kCream = 0xFFF6EEDA, kInk = 0xFF160E30;
+constexpr uint32_t kVelvet = 0xF21A1440, kVelvetDeep = 0xF20E0A26;
+
 // Shared drawing helpers
 void draw_panel(Video& v, Rect r, uint32_t accent, float alpha = 1.0f);
+// Text with a dark outline all round (titles in the Theatre style; text over the player's background picture).
+void draw_text_outlined(Video& v, FontId font, float x, float y, const std::string& text, uint32_t color, uint32_t outline,
+                        Align align = Align::Left, float scale = 1.0f, float width = 0.0f);
 uint32_t with_alpha(uint32_t c, float a);
 uint32_t lerp_color(uint32_t a, uint32_t b, float t);

@@ -43,6 +43,7 @@ public:
     // `extra`: the app's own note stored with the state (the achievement run, see App::ach_state_tag).
     std::vector<uint8_t> save_state(const std::string& extra = std::string());
     bool load_state(const std::vector<uint8_t>& data, std::string* extra = nullptr);
+    std::string state_id() const;          // names the game (and release) a save state belongs to
 
     const FrameInfo& info() const { return info_; }
     const GameConfig& config() const { return cfg_; }

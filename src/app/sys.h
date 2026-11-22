@@ -35,7 +35,14 @@ std::wstring exe_dir();
 // %LOCALAPPDATA%\Mickey and Donald Collection when that folder is read-only (e.g. Program Files); on
 // Android the app's internal storage.
 std::wstring data_dir();
+// Where exported files go (the achievements export): the data folder on Windows; on Android the app's folder on the
+// shared storage (Android/data/<package>/files), which a file manager or a PC over USB can open.
+std::wstring export_dir();
 // The folders searched for ROMs, in order.
 std::vector<std::wstring> rom_dirs();
 
 void open_url(const char* url);
+// A web page's body (HTTPS GET; the update check). Blocking, up to about 8 s: call it off the main thread.
+bool http_get(const char* url, std::string& out);
+// Today's date as "YYYY-MM-DD" (local time).
+std::string today_text();

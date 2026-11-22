@@ -22,25 +22,36 @@
 #endif
 #include "rewind.h"
 #include "achievements.h"
+#include "updatecheck.h"
 #ifdef __ANDROID__
 #include "touch.h"
 #endif
 
-constexpr const char* kAppVersion = "1.2";   // shown in the launcher, the window title and Credits
+constexpr const char* kAppVersion = "1.3";   // shown in the launcher, the window title and Credits
 constexpr double kEmuFps = 53693175.0 / (3420.0 * 262.0);   // 59.9227 Hz
 
 struct GameSlot {
     std::unique_ptr<GameModule> module;
-    RomMatch rom;
+    RomMatch rom;                         // the release in use: the preview's, and what Play starts (a copy of roms[variant])
+    int variant = 0;                      // its index in module->rom_variants()
+    std::vector<RomMatch> roms;           // one per release of the game (a game with two, like QuackShot, has one card)
     std::unique_ptr<Session> preview;     // launcher attract-mode preview
+
+    int found_count() const { int n = 0; for (const RomMatch& r : roms) n += r.found; return n; }
+    // Makes `prefer` the release in use if it was found, else the first one found; with none found, `rom` carries what
+    // the card says about the wrong file.
+    void choose(int prefer);
 };
 
 class Jukebox {
 public:
     // `packs`: the MD+ soundtracks found; the Music Player offers this game's as versions of the music, starting
     // with the one the game is set to play (Settings::soundtrack).
+    // `variant`: the release `rom` is (index in module->rom_variants()); `roms`: the game's releases that are there, by
+    // release (a pack's patch for another release can be carried over from them; empty: `rom` alone).
     bool open(GameModule* module, const std::vector<uint8_t>& rom, const Settings& s, bool sfx,
-              const std::vector<SoundtrackPack>& packs);
+              const std::vector<SoundtrackPack>& packs, int variant = 0,
+              const std::vector<const std::vector<uint8_t>*>& roms = {});
     void close();
     bool active() const { return active_; }
     void update(const UiInput& in);
@@ -134,10 +145,34 @@ private:
     float launcher_anim_[kGameCount + 5] = {};
     Rect launcher_hit_[kGameCount + 5] = {};   // cards then buttons, where the last draw put them (taps)
     Rect launcher_link_ = {};            // the Team RedTail logo and its Patreon page, top left (a link; empty: not shown)
-    std::vector<uint32_t> logo_px_;      // the logo resampled to the size it is shown at
-    int logo_w_ = 0, logo_h_ = 0;
+    int logo_image_ = 0;                 // (Video::create_image)
+    // The player's own launcher pictures (Options > Launcher): covers/<game id> and covers/background in the data
+    // folder, PNG or JPEG; made pictures on the display when first drawn.
+    struct Art { std::vector<uint32_t> px; int w = 0, h = 0, image = 0; };
+    Art cover_art_[kGameCount], bg_art_;
+    bool art_covers_ = false, art_bg_ = false, art_loaded_ = false;
+    std::wstring covers_dir() const;
+    bool has_cover(int g) const;
+    void load_launcher_art(bool reload = false);
+    int art_image(Art& a);
+    void ensure_previews();              // previews for the found games without a cover; none for the others
+    void draw_stage(float W, float H, float side, float floor_y, float title_right);   // the Theatre style's launcher backdrop
+    void apply_ui_style();               // the menu style: the look of the menus and the launcher, the title font
     bool over_launcher_link(float x, float y) const;
     void open_patreon();
+    // Updates (updatecheck.h): a newer release on GitHub gets a badge on the launcher (it opens its page)
+    UpdateCheck updater_;
+    std::string update_tag_;             // the newer release's tag ("v1.3"), or empty
+    bool update_manual_ = false, update_started_ = false, update_told_ = false;
+    Rect launcher_update_ = {};          // the badge, where the last draw put it
+    bool pad_noisy_[8] = {};             // controllers already reported as ignored for random presses
+    bool last_input_pad_ = false;        // the latest menu input came from a controller (Controls opens on its rows)
+    void check_for_update(bool manual);  // (manual: Check Now, which says what it found)
+    void update_tick();                  // each frame: starts the day's check, takes a finished one's result
+    void apply_update_tag(const std::string& tag);
+    void open_update_page();
+    std::string update_version() const;  // ("v1.3": "1.3")
+    bool over_update_badge(float x, float y) const;
 #ifdef __ANDROID__
     TouchControls touch_;
     bool touch_active_ = true;           // the last input came from the touch screen (else a controller / keys)
@@ -152,6 +187,9 @@ private:
     double soundtrack_note_at_ = 0;      // when the next "copying" message is due
     void pick_soundtrack();              // Android: picks an MD+ pack's folder; it is copied into files/soundtracks
     void poll_soundtrack();              // while it is picked / copied: progress, then the pack it found
+    std::string picking_image_;          // the launcher picture being picked (a game id or "background")
+    void pick_image(const std::string& name);   // Android's picture picker; copied to files/covers/<name>.png
+    void poll_image();
 #endif
     uint64_t rom_sig_ = 0;
     double rom_poll_ = 0;
@@ -194,6 +232,8 @@ private:
     bool black_frame_ = false;           // this refresh is one of black frame insertion's black ones
     double fps_display_ = 0;
     int    fps_frames_ = 0;
+    double fps_game_ = 0;                // game frames run per second (Show FPS)
+    uint64_t fps_runs_ = 0;
     double fps_timer_ = 0;
     std::vector<int16_t> audio_buf_;
 
@@ -270,7 +310,9 @@ private:
     void frame(double dt);
     void update_launcher(const UiInput& ui, double dt);
     void draw_launcher();
-    void launch(int game);
+    // variant: the release to play (-1: the only one there, or the player is asked when a game has several)
+    void launch(int game, int variant = -1);
+    void open_version_menu(int game, const std::vector<int>& have);   // which release to play (app_menus.cpp)
     void find_game_roms();                // searches for the ROMs still missing; opens previews for new ones
     void poll_roms(double dt);            // launcher: notices ROMs added while it is open
     // MD+ soundtracks (soundtrack.h): the packs found, and the one the running game was started with
@@ -278,6 +320,7 @@ private:
     std::string playing_soundtrack_;
     void scan_soundtracks();
     const SoundtrackPack* soundtrack_for(int game);   // the pack the settings choose for a game, if it's there
+    std::vector<const std::vector<uint8_t>*> variant_roms(int game);   // a game's releases that are there, by release
     void reset_game();                    // Reset Game: power-on, or a fresh start when the soundtrack changed
     void back_to_launcher();
     void run_game_frames(int count, bool audio);
@@ -289,6 +332,8 @@ private:
     void open_options_menu(bool from_launcher);
     void open_credits(bool from_launcher);
     MenuPage video_page();
+    MenuPage launcher_page();
+    void export_achievement_list();   // achievements.csv + badges (achexport.h)
     MenuPage color_page();
     MenuPage audio_page();
     MenuPage controls_page(int player);

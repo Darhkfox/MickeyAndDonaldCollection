@@ -4,6 +4,8 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <cstring>
+#include <ctime>
+#include <jni.h>
 
 std::string to_utf8(const std::wstring& w) {
     std::string s;
@@ -122,4 +124,43 @@ std::vector<std::wstring> rom_dirs() {
     return dirs;
 }
 
+std::wstring export_dir() {
+    const char* p = SDL_AndroidGetExternalStoragePath();
+    return p ? from_utf8(p) : data_dir();
+}
+
 void open_url(const char* url) { SDL_OpenURL(url); }
+
+// Through MDActivity.httpGet (Java's HttpURLConnection), on the calling thread (SDL attaches it to the JVM).
+bool http_get(const char* url, std::string& out) {
+    out.clear();
+    JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
+    jobject act = (jobject)SDL_AndroidGetActivity();
+    if (!env || !act) return false;
+    jclass cls = env->GetObjectClass(act);
+    if (jmethodID m = env->GetStaticMethodID(cls, "httpGet", "(Ljava/lang/String;)Ljava/lang/String;")) {
+        jstring u = env->NewStringUTF(url);
+        jstring r = (jstring)env->CallStaticObjectMethod(cls, m, u);
+        if (r && !env->ExceptionCheck()) {
+            if (const char* c = env->GetStringUTFChars(r, nullptr)) {
+                out = c;
+                env->ReleaseStringUTFChars(r, c);
+            }
+        }
+        if (r) env->DeleteLocalRef(r);
+        env->DeleteLocalRef(u);
+    }
+    env->ExceptionClear();
+    env->DeleteLocalRef(cls);
+    env->DeleteLocalRef(act);
+    return !out.empty();
+}
+
+std::string today_text() {
+    time_t t = time(nullptr);
+    tm lt;
+    localtime_r(&t, &lt);
+    char buf[16];
+    strftime(buf, sizeof buf, "%Y-%m-%d", &lt);
+    return buf;
+}

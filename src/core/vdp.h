@@ -26,6 +26,7 @@ public:
     int      (*line_clock)(void* host) = nullptr;
     // 68000 stall for DMA (68000 cycles).
     void     (*cpu_stall)(void* host, int cycles68) = nullptr;
+    int      m68_div = 7 * 256;   // master clocks per 68000 cycle, in 256ths (MegaDrive::set_m68k_speed)
     // Interrupt level changed (call cpu.set_irq).
     void     (*irq_changed)(void* host, int level) = nullptr;
     void*    host = nullptr;

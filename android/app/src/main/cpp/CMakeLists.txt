@@ -46,12 +46,15 @@ add_library(main SHARED
   ${SRC}/app/rewind.cpp
   ${SRC}/app/ui.cpp
   ${SRC}/app/touch.cpp
+  ${SRC}/app/imageload.cpp
+  ${SRC}/app/updatecheck.cpp
+  ${SRC}/app/achexport.cpp
   ${SRC}/platform/android/video_gles.cpp
   ${SRC}/platform/android/audio_sdl.cpp
   ${SRC}/platform/android/input_sdl.cpp
 )
 set_target_properties(main PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-target_include_directories(main PRIVATE ${SRC})
+target_include_directories(main PRIVATE ${SRC} ${SRC}/../third_party/stb)
 # (the emulation core needs optimising even in debug builds to reach full speed)
 target_compile_options(main PRIVATE -O2 -Wno-unused-parameter -Wno-sign-compare)
 target_link_libraries(main PRIVATE SDL2 GLESv3 android log)

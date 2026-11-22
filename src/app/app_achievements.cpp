@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include "achexport.h"
 
 void App::ach_startup() {
     ach_.load(path_join(data_dir(), L"achievements.ini"));
@@ -181,6 +182,9 @@ MenuPage App::achievements_page(int game) {
     p.title = "Achievements";
     p.wide = true;
     p.items.push_back(achievements_switch());
+    p.items.push_back(MenuItem::action("Export to CSV", [this]() { export_achievement_list(); },
+                                       "Writes achievements.csv and a badge picture for each achievement (earned and locked) "
+                                       "to an \"achievements export\" folder: ready for Playnite's achievements import."));
     int total = 0, got = 0;
     auto add = [&](const std::string& group, const std::vector<AchievementDef>& defs) {
         p.items.push_back(MenuItem::header(group));
@@ -214,6 +218,21 @@ MenuPage App::achievements_page(int game) {
     snprintf(buf, sizeof(buf), "%d of %d unlocked", got, total);
     p.subtitle = buf;
     return p;
+}
+
+// achievements.csv and the badges (achexport.h), in "achievements export" in the export folder.
+void App::export_achievement_list() {
+    std::vector<AchievementGroup> groups;
+    for (int g = 0; g < kGameCount; g++) groups.push_back({games_[g].module->title(), games_[g].module->achievements()});
+    groups.push_back({"Mickey & Donald Collection", collection_achievements()});
+    const std::wstring dir = path_join(export_dir(), L"achievements export");
+    std::string err;
+    if (!export_achievements(dir, groups, ach_, &err)) { menu_.toast("Export failed: " + err, 5.0f); return; }
+#ifdef __ANDROID__
+    menu_.toast("Exported to Android/data/com.darhkfox.mickeydonald/files/achievements export", 6.0f);
+#else
+    menu_.toast("Exported: achievements.csv and badges in \"achievements export\"", 4.0f);
+#endif
 }
 
 // The Achievements on / off switch (Options, and the top of the Achievements page). Switching off during a game that

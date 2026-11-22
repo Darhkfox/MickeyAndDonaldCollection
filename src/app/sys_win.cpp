@@ -1,6 +1,9 @@
 #include "sys.h"
 #include <windows.h>
 #include <shellapi.h>
+#include <winhttp.h>
+#include <ctime>
+#pragma comment(lib, "winhttp.lib")
 
 std::string to_utf8(const std::wstring& w) {
     int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
@@ -126,6 +129,58 @@ std::vector<std::wstring> rom_dirs() {
     return out;
 }
 
+std::wstring export_dir() { return data_dir(); }
+
 void open_url(const char* url) {
     ShellExecuteW(nullptr, L"open", from_utf8(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+}
+
+bool http_get(const char* url, std::string& out) {
+    out.clear();
+    const std::wstring w = from_utf8(url);
+    wchar_t host[256], path[2048];
+    URL_COMPONENTS uc = {};
+    uc.dwStructSize = sizeof uc;
+    uc.lpszHostName = host;
+    uc.dwHostNameLength = 256;
+    uc.lpszUrlPath = path;
+    uc.dwUrlPathLength = 2048;
+    if (!WinHttpCrackUrl(w.c_str(), 0, 0, &uc)) return false;
+    HINTERNET s = WinHttpOpen(L"MickeyAndDonaldCollection", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME,
+                              WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!s) return false;
+    WinHttpSetTimeouts(s, 8000, 8000, 8000, 8000);
+    HINTERNET c = WinHttpConnect(s, host, uc.nPort, 0);
+    HINTERNET r = c ? WinHttpOpenRequest(c, L"GET", path, nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
+                                         uc.nScheme == INTERNET_SCHEME_HTTPS ? WINHTTP_FLAG_SECURE : 0)
+                    : nullptr;
+    bool ok = r && WinHttpSendRequest(r, L"Accept: application/vnd.github+json\r\n", (DWORD)-1L, WINHTTP_NO_REQUEST_DATA,
+                                      0, 0, 0) &&
+              WinHttpReceiveResponse(r, nullptr);
+    DWORD status = 0, size = sizeof status;
+    if (ok)
+        WinHttpQueryHeaders(r, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_HEADER_NAME_BY_INDEX, &status,
+                            &size, WINHTTP_NO_HEADER_INDEX);
+    ok = ok && status == 200;
+    while (ok && out.size() < (1u << 20)) {
+        DWORD avail = 0, got = 0;
+        if (!WinHttpQueryDataAvailable(r, &avail) || !avail) break;
+        const size_t at = out.size();
+        out.resize(at + avail);
+        if (!WinHttpReadData(r, &out[at], avail, &got)) ok = false;
+        out.resize(at + got);
+    }
+    if (r) WinHttpCloseHandle(r);
+    if (c) WinHttpCloseHandle(c);
+    WinHttpCloseHandle(s);
+    return ok && !out.empty();
+}
+
+std::string today_text() {
+    time_t t = time(nullptr);
+    tm lt;
+    localtime_s(&lt, &t);
+    char buf[16];
+    strftime(buf, sizeof buf, "%Y-%m-%d", &lt);
+    return buf;
 }

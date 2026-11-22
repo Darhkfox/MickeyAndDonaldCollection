@@ -128,6 +128,8 @@ const PadState& Input::pad(int index) const {
     return (index >= 0 && index < kMaxPads) ? impl->pads[index] : none;
 }
 
+void Input::set_dinput_enabled(bool) {}   // (Windows only)
+
 int Input::first_connected_pad() const {
     for (int i = 0; i < kMaxPads; i++) if (impl->pads[i].connected) return i;
     return -1;

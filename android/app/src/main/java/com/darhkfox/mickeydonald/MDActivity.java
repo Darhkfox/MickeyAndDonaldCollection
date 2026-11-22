@@ -16,6 +16,9 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.ByteArrayOutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,6 +32,10 @@ import org.libsdl.app.SDLActivity;
 public class MDActivity extends SDLActivity {
     private static final int PICK_ROMS = 0x4D44;
     private static final int PICK_SOUNDTRACK = 0x4D45;
+    private static final int PICK_IMAGE = 0x4D46;
+    // the launcher's pictures (a card's cover or the background): the name it's saved as, and the result
+    private static volatile String imageName = "";
+    private static volatile int imageResult = -1;
     private static final long MAX_FILE = 64L << 20;
     // set when the picker returns: the number of files copied (-1 while the picker is open / nothing yet)
     private static volatile int pickResult = -1;
@@ -36,6 +43,31 @@ public class MDActivity extends SDLActivity {
     @Override
     protected String[] getLibraries() {
         return new String[] { "SDL2", "main" };
+    }
+
+    // ---- update check (called from native code, sys_android.cpp, on the checker's own thread) --------
+    // A web page's body (GitHub's latest release); null if it couldn't be had.
+    public static String httpGet(String url) {
+        HttpURLConnection c = null;
+        try {
+            c = (HttpURLConnection) new URL(url).openConnection();
+            c.setConnectTimeout(8000);
+            c.setReadTimeout(8000);
+            c.setRequestProperty("Accept", "application/vnd.github+json");
+            c.setRequestProperty("User-Agent", "MickeyAndDonaldCollection");
+            if (c.getResponseCode() != 200) return null;
+            InputStream in = c.getInputStream();
+            ByteArrayOutputStream o = new ByteArrayOutputStream();
+            byte[] b = new byte[4096];
+            int n;
+            while ((n = in.read(b)) > 0 && o.size() < (1 << 20)) o.write(b, 0, n);
+            in.close();
+            return o.toString("UTF-8");
+        } catch (Exception e) {
+            return null;
+        } finally {
+            if (c != null) c.disconnect();
+        }
     }
 
     // ---- ROM picker (called from native code, app_android.cpp) ----------------------------------------
@@ -56,6 +88,53 @@ public class MDActivity extends SDLActivity {
                 }
             }
         });
+    }
+
+    // ---- launcher pictures (called from native code, app_android.cpp) ----------------------------------
+    // The player's own cover or background picture, copied to files/covers/<name>.png (read by its content:
+    // a JPEG under that name is fine). Result: -1 while the picker is open, then 0 cancelled / failed, 1 copied.
+    public static void pickImage(String name) {
+        imageName = name;
+        imageResult = -1;
+        final SDLActivity act = mSingleton;
+        act.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                i.addCategory(Intent.CATEGORY_OPENABLE);
+                i.setType("image/*");
+                try {
+                    act.startActivityForResult(i, PICK_IMAGE);
+                } catch (Exception e) {
+                    imageResult = 0;
+                }
+            }
+        });
+    }
+
+    public static int pollImageResult() {
+        int r = imageResult;
+        if (r >= 0) imageResult = -1;
+        return r;
+    }
+
+    private boolean copyImage(Uri uri, File out) {
+        File tmp = new File(out.getParentFile(), out.getName() + ".tmp");
+        try (InputStream in = getContentResolver().openInputStream(uri); OutputStream os = new FileOutputStream(tmp)) {
+            byte[] buf = new byte[65536];
+            long total = 0;
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                os.write(buf, 0, n);
+                total += n;
+                if (total > (48L << 20)) throw new Exception("too big a picture");
+            }
+        } catch (Exception e) {
+            tmp.delete();
+            return false;
+        }
+        out.delete();
+        return tmp.renameTo(out);
     }
 
     // polled from native code: -1 while the picker is open, else the number of files copied (once)
@@ -98,6 +177,18 @@ public class MDActivity extends SDLActivity {
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == PICK_IMAGE) {
+            int ok = 0;
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                File dir = new File(getFilesDir(), "covers");
+                dir.mkdirs();
+                String name = imageName.replace('/', '_').replace('\\', '_');
+                for (String ext : new String[] { ".jpg", ".jpeg" }) new File(dir, name + ext).delete();
+                if (copyImage(data.getData(), new File(dir, name + ".png"))) ok = 1;
+            }
+            imageResult = ok;
+            return;
+        }
         if (requestCode == PICK_SOUNDTRACK) {
             if (resultCode != RESULT_OK || data == null || data.getData() == null) { soundtrackResult = 0; return; }
             final Uri tree = data.getData();
@@ -244,10 +335,28 @@ public class MDActivity extends SDLActivity {
     // Renders each code point with the system font at `px` pixels. meta (filled in): [0] ascent, [1] line
     // height, then per code point: advance x 64, left, top (relative to the pen and baseline), width, height;
     // width 0 = nothing to draw, advance -1 = no glyph. Returns the 8-bit coverage bitmaps, one after another.
-    public static byte[] renderGlyphs(int[] cps, float px, boolean bold, int[] meta) {
+    // `title`: the display font (Luckiest Guy, in the app's assets: the Theatre menu style's titles); what it
+    // lacks comes from the system font.
+    private static Typeface titleFace;
+    public static byte[] renderGlyphs(int[] cps, float px, boolean bold, boolean title, int[] meta) {
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.SUBPIXEL_TEXT_FLAG);
         Typeface tf = Typeface.create(Typeface.DEFAULT, bold ? Typeface.BOLD : Typeface.NORMAL);
         if (bold && Build.VERSION.SDK_INT >= 28) tf = Typeface.create(Typeface.DEFAULT, 700, false);
+        Paint fallback = null;
+        if (title) {
+            if (titleFace == null) {
+                try {
+                    titleFace = Typeface.createFromAsset(mSingleton.getAssets(), "LuckiestGuy-Regular.ttf");
+                } catch (Exception e) {
+                    titleFace = tf;
+                }
+            }
+            fallback = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.SUBPIXEL_TEXT_FLAG);
+            fallback.setTypeface(tf);
+            fallback.setTextSize(px);
+            fallback.setColor(0xFFFFFFFF);
+            tf = titleFace;
+        }
         p.setTypeface(tf);
         p.setTextSize(px);
         p.setColor(0xFFFFFFFF);
@@ -257,21 +366,24 @@ public class MDActivity extends SDLActivity {
         java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
         Rect r = new Rect();
         for (int i = 0; i < cps.length; i++) {
-            String s = new String(Character.toChars(cps[i]));
+            // (the display font's lower case letters are odd shapes: its capitals instead)
+            String s = new String(Character.toChars(title && cps[i] < 0x250 ? Character.toUpperCase(cps[i]) : cps[i]));
             int m = 2 + i * 5;
-            if (cps[i] != ' ' && Build.VERSION.SDK_INT >= 23 && !p.hasGlyph(s)) {
+            Paint q = p;
+            if (fallback != null && cps[i] != ' ' && Build.VERSION.SDK_INT >= 23 && !p.hasGlyph(s)) q = fallback;
+            if (cps[i] != ' ' && Build.VERSION.SDK_INT >= 23 && !q.hasGlyph(s)) {
                 meta[m] = -1;
                 continue;
             }
-            meta[m] = Math.round(p.measureText(s) * 64);
-            p.getTextBounds(s, 0, s.length(), r);
+            meta[m] = Math.round(q.measureText(s) * 64);
+            q.getTextBounds(s, 0, s.length(), r);
             if (r.width() <= 0 || r.height() <= 0) {
                 meta[m + 3] = meta[m + 4] = 0;
                 continue;
             }
             int w = r.width() + 2, h = r.height() + 2;   // a pixel of room for anti-aliasing on each side
             Bitmap b = Bitmap.createBitmap(w, h, Bitmap.Config.ALPHA_8);
-            new Canvas(b).drawText(s, 1 - r.left, 1 - r.top, p);
+            new Canvas(b).drawText(s, 1 - r.left, 1 - r.top, q);
             ByteBuffer buf = ByteBuffer.allocate(b.getRowBytes() * h);
             b.copyPixelsToBuffer(buf);
             byte[] all = buf.array();

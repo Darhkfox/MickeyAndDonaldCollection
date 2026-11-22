@@ -35,6 +35,22 @@ jint call_activity_int(const char* name) {
     return r;
 }
 
+// MDActivity.pickImage(name): the picker for a launcher picture (saved as files/covers/<name>.png).
+void call_pick_image(const std::string& name) {
+    JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
+    jobject act = (jobject)SDL_AndroidGetActivity();
+    if (!env || !act) return;
+    jclass cls = env->GetObjectClass(act);
+    if (jmethodID m = env->GetStaticMethodID(cls, "pickImage", "(Ljava/lang/String;)V")) {
+        jstring s = env->NewStringUTF(name.c_str());
+        env->CallStaticVoidMethod(cls, m, s);
+        env->DeleteLocalRef(s);
+    }
+    env->ExceptionClear();
+    env->DeleteLocalRef(cls);
+    env->DeleteLocalRef(act);
+}
+
 void call_activity_void(const char* name) {
     JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
     jobject act = (jobject)SDL_AndroidGetActivity();
@@ -204,6 +220,29 @@ void App::poll_pick() {
             added++;
         }
     if (!added) menu_.toast(r == 1 ? "That file isn't one of the ROMs - see the game cards" : "No new ROMs in those files - see the game cards");
+}
+
+// A launcher picture: a game's cover (its id) or "background". The option it belongs to is switched on.
+void App::pick_image(const std::string& name) {
+    picking_image_ = name;
+    call_pick_image(name);
+}
+
+void App::poll_image() {
+    const jint r = call_activity_int("pollImageResult");
+    if (r < 0) return;
+    const std::string name = picking_image_;
+    picking_image_.clear();
+    if (r != 1) { menu_.toast("No picture chosen"); return; }
+    if (name == "background") settings_.launcher_background = true;
+    else settings_.launcher_covers = true;
+    save_settings();
+    load_launcher_art(true);
+    const bool shown = name == "background" ? bg_art_.w > 0 : [&]() {
+        for (int g = 0; g < kGameCount; g++) if (games_[g].module->id() == name) return has_cover(g);
+        return false;
+    }();
+    menu_.toast(shown ? "Picture added" : "That picture couldn't be read (PNG or JPEG only)");
 }
 
 void App::pick_soundtrack() {

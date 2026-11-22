@@ -28,6 +28,9 @@ struct PadState {
     float    lx = 0, ly = 0;       // left stick -1..1 (y up = -1)
     uint64_t raw_buttons = 0;      // DirectInput raw button bits (0..63), XInput: same as buttons
     uint64_t raw_pressed = 0;
+    // Windows: a DirectInput controller left out - it sends constant random presses (e.g. a Switch Pro Controller that
+    // another program switched to its full report mode), or "other controllers" are switched off. It reads as idle.
+    bool     ignored = false;
 };
 
 class Input {
@@ -55,6 +58,8 @@ public:
     const PadState& pad(int index) const;
     // Index of the first connected pad (XInput slots 0-3 first, then DirectInput 4-7), or -1.
     int  first_connected_pad() const;
+    // Windows: read DirectInput ("other", non-Xbox) controllers at all (on by default; Android: no effect).
+    void set_dinput_enabled(bool on);
     // Rumble etc. is not needed.
 
     static std::string key_name(int vk);

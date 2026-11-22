@@ -99,6 +99,7 @@ void MegaDrive::power_on() {
     io_data[0] = io_data[1] = io_data[2] = 0x7F;
     io_ctrl[0] = io_ctrl[1] = io_ctrl[2] = 0;
     m68_clock = z80_clock = audio_clock = 0;
+    m68_frac = 0;
     frame_count = 0;
     cpu.reset();
 }
@@ -111,9 +112,26 @@ void MegaDrive::soft_reset() {
     cpu.reset();
 }
 
-void MegaDrive::add_pc_hook(uint32_t addr, std::function<void(MegaDrive&)> fn) {
-    pc_hooks[addr & 0xFFFFFF] = std::move(fn);
+void MegaDrive::add_pc_hook(uint32_t addr, std::function<void(MegaDrive&)> fn, int owner) {
+    if (owner == kHookModule && block_module_hooks) return;
+    std::vector<PcHook>& v = pc_hooks[addr & 0xFFFFFF];
+    for (PcHook& h : v)
+        if (h.owner == owner) { h.fn = std::move(fn); return; }
+    v.push_back({owner, std::move(fn)});
     cpu.set_hook(addr, true);
+}
+
+void MegaDrive::remove_pc_hooks(int owner) {
+    for (auto it = pc_hooks.begin(); it != pc_hooks.end();) {
+        std::vector<PcHook>& v = it->second;
+        v.erase(std::remove_if(v.begin(), v.end(), [owner](const PcHook& h) { return h.owner == owner; }), v.end());
+        if (v.empty()) {
+            cpu.set_hook(it->first, false);
+            it = pc_hooks.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 void MegaDrive::clear_pc_hooks() {
@@ -124,7 +142,11 @@ void MegaDrive::clear_pc_hooks() {
 void MegaDrive::hook_dispatch(void* ctx, uint32_t pc) {
     MegaDrive* md = (MegaDrive*)ctx;
     auto it = md->pc_hooks.find(pc & 0xFFFFFF);
-    if (it != md->pc_hooks.end()) it->second(*md);
+    if (it == md->pc_hooks.end()) return;
+    for (const PcHook& h : it->second) {
+        h.fn(*md);
+        if (md->cpu.pc != pc) return;
+    }
 }
 
 int MegaDrive::line_clock() const {
@@ -142,9 +164,11 @@ void MegaDrive::run_until(int64_t target) {
     while (m68_clock < target || z80_clock < target) {
         int64_t slice_end = std::min(target, std::min(m68_clock, z80_clock) + 1140);
         if (m68_clock < slice_end) {
-            int cycles = (int)((slice_end - m68_clock + 6) / 7);
-            int done = cpu.run(cycles);
-            m68_clock += (int64_t)done * 7;
+            int cycles = (int)(((slice_end - m68_clock) * 256 - m68_frac + m68_div - 1) / m68_div);
+            int done = cpu.run(std::max(cycles, 1));
+            m68_frac += (int64_t)done * m68_div;
+            m68_clock += m68_frac >> 8;
+            m68_frac &= 255;
         }
         if (!z80_reset && !z80_busreq) {
             if (z80_clock < slice_end) {
@@ -177,6 +201,12 @@ void MegaDrive::sync_audio(int64_t t) {
     }
     audio_frames += (int)n;
     audio_clock += n * kMclkPerSample;
+}
+
+void MegaDrive::set_m68k_speed(int pct) {
+    pct = std::clamp(pct, 100, 400);
+    m68_div = 7 * 256 * 100 / pct;
+    vdp.m68_div = m68_div;
 }
 
 void MegaDrive::run_frame() {

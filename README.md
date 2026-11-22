@@ -22,6 +22,7 @@ originals, then adds game-specific patches and a PC frontend.
    |---|---|---|---|
    | Castle of Illusion | `Mickey Mouse - Castle of Illusion (U) [!].bin` | 512 KB | `BA4E9FD0` |
    | QuackShot | `Quack Shot Starring Donald Duck (JUE) (REV 00) [!].bin` | 512 KB | `88C8DD94` |
+   | QuackShot (or) | `Quack Shot Starring Donald Duck (JUE) (REV 01) [!].bin` | 1.25 MB | `1801098B` |
    | World of Illusion | `World of Illusion Starring Mickey Mouse and Donald Duck (U) [!].bin` | 1 MB | `921EBD1C` |
 
 3. Run `DisneyClassics.exe`. The first launch opens fullscreen; F11 or Alt+Enter switches to a window.
@@ -30,11 +31,12 @@ ROMs are found by their contents (CRC32), so file names don't matter. Raw `.bin`
 interleaved `.smd` dumps, dumps with a 512-byte copier header and all of these inside a `.zip` work. ROMs
 copied in while the launcher is open are picked up within a second.
 
-**These exact versions are needed** (the USA cartridges; QuackShot's is the USA / World first revision): the
-widescreen patches, level select and cheats are matched to their internals. A game whose ROM is missing
+**These exact versions are needed** (the USA cartridges; QuackShot's USA / World REV 00 or REV 01): the
+widescreen patches, level select and cheats are matched to their internals. With both QuackShot releases
+present, Play asks which one to start; each keeps its own save states. A game whose ROM is missing
 shows *ROM not found* on its card, with the file it needs. Any other dump of the game is recognised from
-the ROM's internal header, and the card says what it is instead: the European or Japanese version, another
-revision (REV 01), or a modified copy / bad dump. The other games still work.
+the ROM's internal header, and the card says what it is instead: the European or Japanese version, or a
+modified copy / bad dump. The other games still work.
 
 To start a game directly, give `DisneyClassics.exe` the argument `--game coi`, `--game qs` or `--game woi`
 (e.g. in a shortcut).
@@ -57,6 +59,13 @@ that fits the screen (2:1 on most phones).
 **Launcher**
 - One card per game with a live attract-mode preview, plus Options, Achievements, the Music Player and
   Credits.
+- **Menu Style** (Options > Launcher & Menus): *Theatre* (the default: midnight velvet panels in gold frames,
+  cartoon-style titles, a starry stage with red curtains behind the games) or *Classic* (the original dark
+  panels).
+- **Your own covers and background**: cover pictures on the cards in place of the previews, and a picture behind
+  the launcher (PNG or JPEG; none are included). On PC put `coi`, `qs`, `woi` and `background` (.png / .jpg) in
+  the `covers` folder (*Open Covers Folder*); on Android pick them with *Choose Cover* / *Choose Background*.
+  Covers can be shown whole or fill the frame.
 
 **Widescreen**
 - 16:10 (360×224), 16:9 (400×224), 2:1 (448×224) and 21:9 ultrawide (536×224, fills 3440×1440 and
@@ -64,13 +73,16 @@ that fits the screen (2:1 on most phones).
   menu only offers the widths the running game supports.
 - More of each level is really drawn at the sides: every game is patched so enemies and items spawn, move
   and are drawn across the whole width, instead of popping in at the edges of the old 320-pixel screen.
+  In Castle of Illusion an enemy that comes into the wider view before the original game would have created
+  it waits there (drawn, not moving) until that moment, so every encounter plays exactly as in 4:3.
   Where the view reaches past the columns the console's 512-pixel background layers hold (21:9, and 2:1 in
   World of Illusion), the extra columns are drawn straight from the level map.
 - The camera stays inside the level where it can; level edges are masked. Castle of Illusion's boss fights
   keep the game's locked 4:3 camera, so they play exactly as the original, with the room's scenery shown
   dimmed at the sides (out of Mickey's reach).
 - The status bar / HUD is re-anchored to the screen edges (can be switched off).
-- Title screens, menus, maps and cut-scenes stay 4:3 automatically. Castle of Illusion's walk down the castle
+- Title screens, menus, maps and cut-scenes stay 4:3 automatically (QuackShot's attract intro, map screen,
+  pause and options screens are shown wide). Castle of Illusion's walk down the castle
   hallway to each round's door is shown wide too.
 - The width (and cheats) can be changed at any time, also mid-level: the patches are swapped at the next
   frame where the CPU isn't inside code that changes, and save states remember the width they were made at.
@@ -144,6 +156,9 @@ that fits the screen (2:1 on most phones).
   forward and rewind again.
 - A pop-up announces each one and what it was for; the launcher and the pause menu list them all, with progress counters for
   things like the 52 cards of World of Illusion.
+- *Export to CSV* (Achievements page): `achievements.csv` (Playnite's achievements spreadsheet columns: points,
+  bronze to platinum tiers, progress, when each was earned) and a badge picture for each achievement, earned and
+  locked, in an `achievements export` folder.
 
 **Cheats** (pause menu, applied at once; switch achievements off first)
 - Castle of Illusion: invincibility, infinite power, tries, items and continues, start with full power, walk
@@ -161,6 +176,9 @@ that fits the screen (2:1 on most phones).
 - 5 save-state slots per game (F5 / F9), fast forward (hold Tab or the right trigger, 4×), rewind (hold R
   or the left trigger, up to the last minute of play), screenshots (F12). Fast forward and rewind can each
   be switched off, and are only available while achievements are off.
+- Update notifications: once a day the launcher looks up the latest release on GitHub (only its version number is
+  read; nothing about you is sent) and shows a badge when there's a newer version; the badge, or Options >
+  Updates > *Latest Version*, opens its page. Nothing is downloaded or installed by itself; switch it off in Options.
 - Version 1.2 (shown in the launcher); the Credits page has links to the author. The Team RedTail logo at the
   launcher's top left opens the [Patreon page](https://www.patreon.com/c/TeamRedTail) (click or tap it).
 
@@ -193,7 +211,7 @@ Steam Input can make one controller appear twice; if one pad moves both players,
 ## Files
 
 Settings are stored in `settings.ini`, earned achievements in `achievements.ini`, save states in `saves\`,
-screenshots in `screenshots\`; soundtrack packs go in `soundtracks\`. These live
+screenshots in `screenshots\`; soundtrack packs go in `soundtracks\`, launcher pictures in `covers\`. These live
 next to the exe (the folder is portable), or in `%LOCALAPPDATA%\Mickey and Donald Collection` if that
 folder isn't writable. Delete `settings.ini` to restore the defaults.
 
@@ -277,22 +295,37 @@ A log line every 5 seconds gives the frame rate and the work per frame (`adb log
   and the landscape on plane B carries on.
 - **QuackShot.** Objects are spawned from a grid of 128-pixel columns as the camera crosses them
   (`$19C08`). From 2:1 a second, farther column is processed each frame; entries placed to appear behind
-  the player (swoop-in birds and others, 41 of 1,036) are held back until the camera reaches the spot they
-  have at 4:3, so they show up where the original shows them. Walkers' turn-around limits are widened, and
-  512-pixel rooms are centred at 21:9.
+  the player (swoop-in birds and others) are held back until the camera reaches the spot they have at 4:3,
+  in both directions, so they show up where the original shows them. Walkers' turn-around limits are
+  widened, and 512-pixel rooms are centred at 21:9. Optional (Options > Video, *QuackShot: Enemies Behind
+  Donald*): enemies the game creates just behind Donald start beyond the wide view's edge and catch up.
+  REV 01 support and many of these fixes come from simplePsyduck's Nintendo Switch port.
 - **World of Illusion.** Plane streaming covers E ≤ 81 unpatched; sprites, despawn, spawn triggers, map
   animation, the 2-player keep-on-screen window and the auto-scroll window are widened. The original camera
   is kept and the picture slides near level edges instead, with a per-line plane B shift so parallax layers
   hold still.
 - Full details, addresses and the scripts that verify them are in `docs/re_*.md`.
 
+## Troubleshooting
+
+- **Menus close by themselves / input you didn't make**: a controller is sending stray presses (a Switch Pro
+  Controller used without Steam, after Steam has switched it to its full mode, is a known case: reconnect it, or
+  play it through Steam). A controller sending random presses is ignored automatically; *Options > Controls >
+  Other Controllers* (off) leaves out every non-Xbox (DirectInput) controller.
+- **Slowdown**: *Show FPS* shows the game's own frame rate; below 60 means the PC isn't keeping up (switch off High
+  Frame Rate, Black Frame Insertion, slang shaders). At 60 the slowdown is the game's own, as on a console:
+  *CPU Overclock* (Options) removes it.
+
 ## Known limitations
 
 - Widescreen: a few enemies only wake up once they reach the original 320-pixel screen area (they wait in
   the extra columns), and a handful of objects designed to appear just behind the player (some birds) pop
-  in at the original screen's left edge. Attract-mode demos are recorded button presses, so in widescreen
-  (where enemies appear a little earlier) they can go off course: at 2:1 and 21:9 two of QuackShot's five
-  demos end with Donald falling or stuck. With widescreen off everything is exactly original.
+  in at the original screen's left edge (QuackShot's optional *Enemies Behind Donald* moves them out of
+  view). Attract-mode demos are recorded button presses, so in widescreen they can go off course: at 2:1
+  and 21:9 two of QuackShot's five demos end with Donald falling or stuck. With widescreen off everything is
+  exactly original.
+- QuackShot REV 01 support was tested by simplePsyduck in the Switch port; MD+ soundtrack patches made for
+  REV 00 are carried over to REV 01 when they only change the sound code.
 - At 21:9: sprites entering at the very left edge can appear up to 20 px late, more enemies wait in the wider
   margins, and QuackShot's 512-pixel rooms (Dracula, the Ghosts, Pete, the final boss and a few others) are
   narrower than the screen, so they show bars of 12 pixels at each side.
@@ -314,9 +347,13 @@ A log line every 5 seconds gives the frame rate and the work per frame (`adb log
 - PC port by Darhkfox — [YouTube](https://www.youtube.com/adhgaming) ·
   [Reddit u/Darhkwing](https://www.reddit.com/user/Darhkwing) · [GitHub](https://github.com/Darhkfox) ·
   [X](https://x.com/ADH_Gaming) · [Patreon](https://www.patreon.com/c/TeamRedTail).
+- QuackShot REV 01 support and many QuackShot widescreen fixes by simplePsyduck, from the Nintendo Switch
+  port of this collection ([MickeyAndDonaldCollection-NX](https://github.com/simplePsyduck/MickeyAndDonaldCollection-NX)).
 - The port's own code is released under the MIT licence (`LICENSE`). The Mega Drive core is written from
   scratch. UI text uses the system font (Segoe UI through DirectWrite on Windows, Android's own font on
-  Android).
+  Android); the Theatre style's titles use Luckiest Guy by Astigmatic, Apache License 2.0
+  (`third_party/fonts`, `LuckiestGuy-LICENSE.txt` next to the exe).
+- Cover pictures are read with stb_image by Sean Barrett, public domain (`third_party/stb`).
 - The Android build uses SDL2 by Sam Lantinga and contributors, zlib licence (fetched by
   `android/fetch_sdl.ps1`, not stored in this repository).
 - Slang shaders run through librashader by Ronny Chan (chyyran), Mozilla Public License 2.0

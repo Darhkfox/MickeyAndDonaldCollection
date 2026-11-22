@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <cwctype>
 #include <numeric>
 #include <vector>
 #include "video.h"
@@ -37,6 +38,8 @@ cbuffer GameCB : register(b0) {
     float2 g_origin;   // destination top-left in pixels
     float  g_alpha;
     float  g_dim;
+    float2 g_off;      // pictures: the source rectangle's top-left in texels
+    float2 g_pad;
 };
 cbuffer OverlayCB : register(b1) { float4 g_screen; };   // 2/W, 2/H
 Texture2D    g_tex    : register(t0);
@@ -58,9 +61,9 @@ float3 sharp(float2 p, float2 s) {
 }
 float4 ps_nearest(float4 sv : SV_Position) : SV_Target { return finish(fetch(src_pos(sv))); }
 float4 ps_sharp(float4 sv : SV_Position) : SV_Target { return finish(sharp(src_pos(sv), max(g_scale, 1))); }
-float4 ps_image(float4 sv : SV_Position) : SV_Target {   // straight alpha, texel for pixel
-    float4 c = g_tex.Load(int3(clamp(int2(floor(src_pos(sv))), 0, int2(g_src) - 1), 0));
-    return float4(c.rgb, c.a * g_alpha);
+// Pictures (premultiplied alpha, mipmapped: smooth at any size).
+float4 ps_picture(float4 sv : SV_Position) : SV_Target {
+    return g_tex.Sample(g_linear, (g_off + src_pos(sv)) / g_src) * g_alpha;
 }
 float4 ps_bilinear(float4 sv : SV_Position) : SV_Target {
     return finish(g_tex.SampleLevel(g_linear, src_pos(sv) / g_src, 0).rgb);
@@ -142,8 +145,17 @@ const char* const kGamePS[(int)ScaleFilter::Count] = { "ps_nearest", "ps_sharp",
 
 struct OVert { float x, y, u, v; uint32_t col; float p[4]; float mode; };
 static_assert(sizeof(OVert) == 40, "vertex layout");
-const int kImageSlot = 4;
-struct GameCB { float dst[4]; float src[2]; float scale[2]; float origin[2]; float alpha, dim; };
+// 0xAARRGGBB straight alpha -> premultiplied.
+std::vector<uint32_t> premultiplied(const uint32_t* px, size_t n) {
+    std::vector<uint32_t> out(n);
+    for (size_t i = 0; i < n; i++) {
+        const uint32_t c = px[i], a = c >> 24;
+        auto m = [a](uint32_t v) { return (v * a + 127) / 255; };
+        out[i] = a << 24 | m((c >> 16) & 255) << 16 | m((c >> 8) & 255) << 8 | m(c & 255);
+    }
+    return out;
+}
+struct GameCB { float dst[4]; float src[2]; float scale[2]; float origin[2]; float alpha, dim; float off[2], pad[2]; };
 const int kMaxQuads = 16384;   // per overlay draw call (16-bit indices)
 
 struct Glyph { float adv; int ox, oy, w, h; float u0, v0, u1, v1; };   // ox/oy: quad offset from pen/baseline
@@ -198,18 +210,22 @@ struct Video::Impl {
     ID3D11DeviceContext* ctx = nullptr;
     IDXGISwapChain1* sc = nullptr;
     ID3D11RenderTargetView* rtv = nullptr;
-    ID3DBlob* blob_vs_game = nullptr, *blob_vs_ov = nullptr, *blob_ps_ov = nullptr, *blob_ps_image = nullptr;
+    ID3DBlob* blob_vs_game = nullptr, *blob_vs_ov = nullptr, *blob_ps_ov = nullptr, *blob_ps_pic = nullptr;
     ID3DBlob* blob_ps_game[(int)ScaleFilter::Count] = {};
     ID3D11VertexShader* vs_game = nullptr, *vs_ov = nullptr;
-    ID3D11PixelShader* ps_game[(int)ScaleFilter::Count] = {}, *ps_ov = nullptr, *ps_image = nullptr;
+    ID3D11PixelShader* ps_game[(int)ScaleFilter::Count] = {}, *ps_ov = nullptr, *ps_pic = nullptr;
     ID3D11InputLayout* layout = nullptr;
     ID3D11Buffer* cb_game = nullptr, *cb_ov = nullptr, *vb = nullptr, *ib = nullptr;
     ID3D11SamplerState* samp[2] = {};
-    ID3D11BlendState* blend = nullptr;
+    ID3D11BlendState* blend = nullptr, *blend_pm = nullptr;   // (blend_pm: premultiplied pictures)
     ID3D11RasterizerState* rast = nullptr;
 
     struct Slot { ID3D11Texture2D* tex = nullptr; ID3D11ShaderResourceView* srv = nullptr; int w = 0, h = 0, tw = 0, th = 0;
-                  std::vector<uint32_t> cpu; } slots[5];   // 0 the game, 1..3 launcher previews, 4 the image (kImageSlot)
+                  std::vector<uint32_t> cpu; } slots[4];
+    // Pictures (Video::create_image): premultiplied mip chains kept on the CPU for a device loss.
+    struct Pic { ID3D11Texture2D* tex = nullptr; ID3D11ShaderResourceView* srv = nullptr; int w = 0, h = 0;
+                 std::vector<std::vector<uint32_t>> mips; };
+    std::vector<Pic> pics;   // id = index + 1; a freed one has no mips
 
     ID3D11Texture2D* atlas = nullptr;
     ID3D11ShaderResourceView* atlas_srv = nullptr;
@@ -218,6 +234,8 @@ struct Video::Impl {
     FontData fonts[(int)FontId::Count];
     IDWriteFactory2* dw = nullptr;
     IDWriteFontFace* faces[(int)FontId::Count][4] = {};   // primary face + fallbacks
+    IDWriteFontFace* display_face = nullptr;   // Luckiest Guy (next to the exe), for Title / Huge when display_on
+    bool display_on = false;
 
     std::vector<OVert> verts;
 
@@ -238,8 +256,8 @@ struct Video::Impl {
         if (!blob_vs_game) blob_vs_game = compile("vs_game", "vs_4_0");
         if (!blob_vs_ov) blob_vs_ov = compile("vs_overlay", "vs_4_0");
         if (!blob_ps_ov) blob_ps_ov = compile("ps_overlay", "ps_4_0");
-        if (!blob_ps_image) blob_ps_image = compile("ps_image", "ps_4_0");
-        bool ok = blob_vs_game && blob_vs_ov && blob_ps_ov && blob_ps_image;
+        if (!blob_ps_pic) blob_ps_pic = compile("ps_picture", "ps_4_0");
+        bool ok = blob_vs_game && blob_vs_ov && blob_ps_ov && blob_ps_pic;
         for (int i = 0; i < (int)ScaleFilter::Count; i++) {
             if (!blob_ps_game[i]) blob_ps_game[i] = compile(kGamePS[i], "ps_4_0");
             ok = ok && blob_ps_game[i];
@@ -321,7 +339,7 @@ struct Video::Impl {
         bool ok = SUCCEEDED(dev->CreateVertexShader(blob_vs_game->GetBufferPointer(), blob_vs_game->GetBufferSize(), nullptr, &vs_game)) &&
                   SUCCEEDED(dev->CreateVertexShader(blob_vs_ov->GetBufferPointer(), blob_vs_ov->GetBufferSize(), nullptr, &vs_ov)) &&
                   SUCCEEDED(dev->CreatePixelShader(blob_ps_ov->GetBufferPointer(), blob_ps_ov->GetBufferSize(), nullptr, &ps_ov)) &&
-                  SUCCEEDED(dev->CreatePixelShader(blob_ps_image->GetBufferPointer(), blob_ps_image->GetBufferSize(), nullptr, &ps_image));
+                  SUCCEEDED(dev->CreatePixelShader(blob_ps_pic->GetBufferPointer(), blob_ps_pic->GetBufferSize(), nullptr, &ps_pic));
         for (int i = 0; ok && i < (int)ScaleFilter::Count; i++)
             ok = SUCCEEDED(dev->CreatePixelShader(blob_ps_game[i]->GetBufferPointer(), blob_ps_game[i]->GetBufferSize(), nullptr, &ps_game[i]));
         if (!ok) return false;
@@ -371,6 +389,8 @@ struct Video::Impl {
         rt.SrcBlendAlpha = D3D11_BLEND_ONE; rt.DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA; rt.BlendOpAlpha = D3D11_BLEND_OP_ADD;
         rt.RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
         if (FAILED(dev->CreateBlendState(&bl, &blend))) return false;
+        rt.SrcBlend = D3D11_BLEND_ONE;
+        if (FAILED(dev->CreateBlendState(&bl, &blend_pm))) return false;
 
         D3D11_RASTERIZER_DESC rd = {};
         rd.FillMode = D3D11_FILL_SOLID; rd.CullMode = D3D11_CULL_NONE; rd.DepthClipEnable = TRUE;
@@ -392,10 +412,11 @@ struct Video::Impl {
         if (ctx) { ctx->ClearState(); ctx->Flush(); }
         for (auto& s : slots) { release(s.srv); release(s.tex); s.tw = s.th = 0; }
         release(atlas_srv); release(atlas);
-        release(rast); release(blend); release(samp[0]); release(samp[1]);
+        for (auto& pc : pics) { release(pc.srv); release(pc.tex); }
+        release(rast); release(blend); release(blend_pm); release(samp[0]); release(samp[1]);
         release(ib); release(vb); release(cb_ov); release(cb_game); release(layout);
         for (auto*& p : ps_game) release(p);
-        release(ps_image); release(ps_ov); release(vs_ov); release(vs_game);
+        release(ps_pic); release(ps_ov); release(vs_ov); release(vs_game);
         release(rtv); release(sc); release(ctx); release(dev);
     }
 
@@ -404,7 +425,8 @@ struct Video::Impl {
         verts.clear();
         release_device_objects();
         if (!create_device_objects()) { next_recover = GetTickCount64() + 1000; return false; }
-        for (int i = 0; i < 5; i++) if (!slots[i].cpu.empty()) upload_slot(i);
+        for (int i = 0; i < 4; i++) if (!slots[i].cpu.empty()) upload_slot(i);
+        for (auto& pc : pics) if (!pc.mips.empty()) create_pic_texture(pc);
         if (!atlas_cpu.empty()) create_atlas_texture();
         if (!slang_path.empty() && !slang.load(dev, slang_path, nullptr)) slang_path.clear();
         return true;
@@ -412,12 +434,14 @@ struct Video::Impl {
     bool device_lost(HRESULT hr) const { return hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET; }
 
     // The quad of a slot's picture in `dst`, through `ps`.
-    void draw_quad(const Slot& s, Rect dst, float alpha, float dim, ID3D11PixelShader* ps) {
+    void draw_quad(ID3D11ShaderResourceView* srv, int tw, int th, Rect dst, Rect src, float alpha, float dim,
+                   ID3D11PixelShader* ps) {
         GameCB cb;
         cb.dst[0] = dst.x / w * 2 - 1;           cb.dst[1] = 1 - dst.y / h * 2;
         cb.dst[2] = (dst.x + dst.w) / w * 2 - 1; cb.dst[3] = 1 - (dst.y + dst.h) / h * 2;
-        cb.src[0] = (float)s.w; cb.src[1] = (float)s.h;
-        cb.scale[0] = dst.w / s.w; cb.scale[1] = dst.h / s.h;
+        cb.src[0] = (float)tw; cb.src[1] = (float)th;
+        cb.scale[0] = dst.w / src.w; cb.scale[1] = dst.h / src.h;
+        cb.off[0] = src.x; cb.off[1] = src.y; cb.pad[0] = cb.pad[1] = 0;
         cb.origin[0] = dst.x; cb.origin[1] = dst.y;
         cb.alpha = std::min(alpha, 1.0f);
         cb.dim = std::max(0.0f, std::min(dim, 1.0f));
@@ -431,9 +455,24 @@ struct Video::Impl {
         ctx->VSSetConstantBuffers(0, 1, &cb_game);
         ctx->PSSetShader(ps, nullptr, 0);
         ctx->PSSetConstantBuffers(0, 1, &cb_game);
-        ctx->PSSetShaderResources(0, 1, &s.srv);
+        ctx->PSSetShaderResources(0, 1, &srv);
         ctx->PSSetSamplers(0, 2, samp);
         ctx->Draw(4, 0);
+    }
+
+    // ---- pictures ----------------------------------------------------------------
+    void create_pic_texture(Pic& pc) {
+        release(pc.srv); release(pc.tex);
+        if (!dev || pc.mips.empty()) return;
+        D3D11_TEXTURE2D_DESC td = {};
+        td.Width = (UINT)pc.w; td.Height = (UINT)pc.h; td.MipLevels = (UINT)pc.mips.size(); td.ArraySize = 1;
+        td.Format = DXGI_FORMAT_B8G8R8A8_UNORM; td.SampleDesc.Count = 1;
+        td.Usage = D3D11_USAGE_IMMUTABLE; td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        std::vector<D3D11_SUBRESOURCE_DATA> sd(pc.mips.size());
+        for (size_t i = 0; i < pc.mips.size(); i++)
+            sd[i] = { pc.mips[i].data(), (UINT)(std::max(1, pc.w >> i) * 4), 0 };
+        if (FAILED(dev->CreateTexture2D(&td, sd.data(), &pc.tex)) ||
+            FAILED(dev->CreateShaderResourceView(pc.tex, nullptr, &pc.srv))) { release(pc.tex); }
     }
 
     // ---- game textures ---------------------------------------------------------
@@ -458,7 +497,7 @@ struct Video::Impl {
     }
 
     void upload(int slot, const uint32_t* px, int fw, int fh, int pitch) {
-        if (slot < 0 || slot > 4 || !px || fw <= 0 || fh <= 0 || fw > 4096 || fh > 4096) return;
+        if (slot < 0 || slot > 3 || !px || fw <= 0 || fh <= 0 || fw > 4096 || fh > 4096) return;
         Slot& s = slots[slot];
         s.w = fw; s.h = fh;
         s.cpu.resize((size_t)fw * fh);
@@ -492,6 +531,20 @@ struct Video::Impl {
                 if (n < 3) if (IDWriteFontFace* p = face(alt, weights[f])) chain[n++] = p;
         }
         release(coll);
+        // The display font (titles in the Theatre menu style): a file next to the executable.
+        wchar_t exe[MAX_PATH];
+        DWORD n = GetModuleFileNameW(nullptr, exe, MAX_PATH);
+        if (n > 0 && n < MAX_PATH) {
+            std::wstring path(exe, n);
+            path = path.substr(0, path.find_last_of(L"\\/") + 1) + L"LuckiestGuy-Regular.ttf";
+            IDWriteFontFile* file = nullptr;
+            BOOL supported = FALSE; DWRITE_FONT_FILE_TYPE ft; DWRITE_FONT_FACE_TYPE fft; UINT32 nf = 0;
+            if (GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES &&
+                SUCCEEDED(dw->CreateFontFileReference(path.c_str(), nullptr, &file)) &&
+                SUCCEEDED(file->Analyze(&supported, &ft, &fft, &nf)) && supported)
+                dw->CreateFontFace(fft, 1, &file, 0, DWRITE_FONT_SIMULATIONS_NONE, &display_face);
+            release(file);
+        }
         return faces[0][0] != nullptr;
     }
 
@@ -526,7 +579,11 @@ struct Video::Impl {
             FontData& fd = fonts[f];
             fd = FontData();
             memset(fd.lut, 0xFF, sizeof(fd.lut));
-            IDWriteFontFace* main = faces[f][0];
+            // (Title and Huge in the display font when it's on, the UI font standing in for what it lacks)
+            IDWriteFontFace* chain[4] = { faces[f][0], faces[f][1], faces[f][2], faces[f][3] };
+            if (display_on && display_face && (f == (int)FontId::Title || f == (int)FontId::Huge))
+                chain[0] = display_face, chain[1] = faces[f][0], chain[2] = faces[f][1], chain[3] = faces[f][2];
+            IDWriteFontFace* main = chain[0];
             if (!main) continue;
             float px = std::max(8.0f, std::round((float)font_base() / kDiv[f]));
             DWRITE_FONT_METRICS fm;
@@ -538,9 +595,10 @@ struct Video::Impl {
                 IDWriteFontFace* face = nullptr;
                 UINT16 gi = 0;
                 for (int j = 0; j < 4 && !face; j++) {
-                    if (!faces[f][j]) continue;
-                    UINT32 c = cp;
-                    if (SUCCEEDED(faces[f][j]->GetGlyphIndices(&c, 1, &gi)) && gi) face = faces[f][j];
+                    if (!chain[j]) continue;
+                    // (the display font is all capitals: its lower case letters are odd shapes, so they're its capitals)
+                    UINT32 c = chain[j] == display_face && cp < 0x250 ? (UINT32)towupper((wint_t)cp) : cp;
+                    if (SUCCEEDED(chain[j]->GetGlyphIndices(&c, 1, &gi)) && gi) face = chain[j];
                 }
                 if (!face) continue;
                 DWRITE_FONT_METRICS ffm; DWRITE_GLYPH_METRICS gm;
@@ -704,8 +762,10 @@ void Video::shutdown() {
     I.release_device_objects();
     for (auto& s : I.slots) { s.cpu.clear(); s.w = s.h = 0; }
     for (auto& chain : I.faces) for (auto*& f : chain) release(f);
+    release(I.display_face);
+    for (auto& pc : I.pics) pc = Impl::Pic();
     release(I.dw);
-    release(I.blob_vs_game); release(I.blob_vs_ov); release(I.blob_ps_ov); release(I.blob_ps_image);
+    release(I.blob_vs_game); release(I.blob_vs_ov); release(I.blob_ps_ov); release(I.blob_ps_pic);
     for (auto*& b : I.blob_ps_game) release(b);
     I.atlas_cpu.clear();
     for (auto& f : I.fonts) f = FontData();
@@ -777,17 +837,62 @@ void Video::draw_game(int slot, Rect dst, ScaleFilter filter, float alpha, float
         if (dim > 0) fill_rect(dst, (uint32_t)(std::min(dim, 1.0f) * 255.0f + 0.5f) << 24);
         return;
     }
-    I.draw_quad(s, dst, alpha, dim, I.ps_game[f]);
+    I.draw_quad(s.srv, s.w, s.h, dst, {0, 0, (float)s.w, (float)s.h}, alpha, dim, I.ps_game[f]);
 }
 
-void Video::upload_image(const uint32_t* pixels, int w, int h) { impl->upload(kImageSlot, pixels, w, h, w); }
-
-void Video::draw_image(Rect dst, float alpha) {
+int Video::create_image(const uint32_t* px, int w, int h) {
     Impl& I = *impl;
-    Impl::Slot& s = I.slots[kImageSlot];
-    if (!I.in_frame || !s.srv || dst.w <= 0 || dst.h <= 0 || alpha <= 0) return;
+    if (!px || w <= 0 || h <= 0 || w > 4096 || h > 4096) return 0;
+    Impl::Pic pc;
+    pc.w = w; pc.h = h;
+    pc.mips.push_back(premultiplied(px, (size_t)w * h));
+    for (int lw = w, lh = h; lw > 1 || lh > 1;) {   // each level the 2x2 average of the one before
+        const std::vector<uint32_t>& src = pc.mips.back();
+        const int nw = std::max(1, lw / 2), nh = std::max(1, lh / 2);
+        std::vector<uint32_t> dst((size_t)nw * nh);
+        for (int y = 0; y < nh; y++)
+            for (int x = 0; x < nw; x++) {
+                const int x0 = std::min(x * 2, lw - 1), x1 = std::min(x * 2 + 1, lw - 1);
+                const int y0 = std::min(y * 2, lh - 1), y1 = std::min(y * 2 + 1, lh - 1);
+                const uint32_t q[4] = { src[(size_t)y0 * lw + x0], src[(size_t)y0 * lw + x1],
+                                        src[(size_t)y1 * lw + x0], src[(size_t)y1 * lw + x1] };
+                uint32_t out = 0;
+                for (int c = 0; c < 32; c += 8) {
+                    uint32_t sum = 2;
+                    for (uint32_t v : q) sum += (v >> c) & 255;
+                    out |= (sum / 4) << c;
+                }
+                dst[(size_t)y * nw + x] = out;
+            }
+        pc.mips.push_back(std::move(dst));
+        lw = nw; lh = nh;
+    }
+    I.create_pic_texture(pc);
+    for (size_t i = 0; i < I.pics.size(); i++)
+        if (I.pics[i].mips.empty()) { I.pics[i] = std::move(pc); return (int)i + 1; }
+    I.pics.push_back(std::move(pc));
+    return (int)I.pics.size();
+}
+
+void Video::free_image(int id) {
+    Impl& I = *impl;
+    if (id <= 0 || id > (int)I.pics.size()) return;
+    Impl::Pic& pc = I.pics[id - 1];
+    release(pc.srv); release(pc.tex);
+    pc = Impl::Pic();
+}
+
+void Video::draw_image(int id, Rect dst, Rect src, float alpha) {
+    Impl& I = *impl;
+    if (!I.in_frame || id <= 0 || id > (int)I.pics.size() || dst.w <= 0 || dst.h <= 0 || alpha <= 0) return;
+    Impl::Pic& pc = I.pics[id - 1];
+    if (!pc.srv) return;
+    if (src.w <= 0 || src.h <= 0) src = {0, 0, (float)pc.w, (float)pc.h};
     I.flush();
-    I.draw_quad(s, dst, alpha, 0.0f, I.ps_image);
+    float bf[4] = { 0, 0, 0, 0 };
+    I.ctx->OMSetBlendState(I.blend_pm, bf, 0xFFFFFFFF);
+    I.draw_quad(pc.srv, pc.w, pc.h, dst, src, std::min(alpha, 1.0f), 0.0f, I.ps_pic);
+    I.ctx->OMSetBlendState(I.blend, bf, 0xFFFFFFFF);
 }
 
 bool Video::slang_available() { return impl->slang.available(); }
@@ -878,6 +983,12 @@ float Video::line_height(FontId font, float scale) {
 }
 
 void Video::rebuild_fonts() { impl->fonts_dirty = true; impl->ensure_fonts(); }
+
+bool Video::set_display_font(bool on) {
+    Impl& I = *impl;
+    if (on != I.display_on) { I.display_on = on; I.flush(); I.fonts_dirty = true; I.ensure_fonts(); }
+    return on && I.display_face;
+}
 
 bool Video::capture(std::vector<uint32_t>& pixels, int& w, int& h) {
     Impl& I = *impl;

@@ -71,8 +71,13 @@ public:
     uint8_t  io_ctrl[3] = {0, 0, 0};
 
     // ---- hooks for game modules and tools ------------------------------------
-    // PC hooks: called before the instruction at `addr` executes.
-    void add_pc_hook(uint32_t addr, std::function<void(MegaDrive&)> fn);
+    // PC hooks: called before the instruction at `addr` executes; one that changes cpu.pc skips the instruction
+    // (and the later hooks at that address). `owner` groups hooks for remove_pc_hooks: one hook per owner and
+    // address (adding again replaces it). Owners: 0 tools, kHookModule game modules.
+    enum { kHookTool = 0, kHookModule = 1 };
+    void add_pc_hook(uint32_t addr, std::function<void(MegaDrive&)> fn, int owner = kHookTool);
+    bool block_module_hooks = false;   // tools: run without the game module's hooks (adding them is ignored)
+    void remove_pc_hooks(int owner);
     void clear_pc_hooks();
     // RAM write watch (68000 side): called after every write to main RAM when set.
     std::function<void(MegaDrive&, uint32_t addr, uint32_t value, int size)> on_ram_write;
@@ -110,17 +115,24 @@ public:
     void     z80_write(uint16_t a, uint8_t v);
 
     // current master-clock position within the frame
-    int64_t now_68k() const { return m68_clock + (int64_t)cpu.executed() * 7; }
+    int64_t now_68k() const { return m68_clock + ((m68_frac + (int64_t)cpu.executed() * m68_div) >> 8); }
+    // CPU overclock: the 68000 at `pct` % of its speed (100: a real console; more takes away the slowdown a game has
+    // on a console, the rest of the machine keeping its own speed). Master clocks per 68000 cycle, in 256ths.
+    void set_m68k_speed(int pct);
+    int  m68k_speed() const { return (int)(7 * 256 * 100 / m68_div); }
     int64_t now_z80() const { return z80_clock + (int64_t)z80.executed() * 15; }
     int     line_clock() const;
 
 private:
     std::vector<uint8_t> rom_orig;
     int64_t m68_clock = 0, z80_clock = 0, audio_clock = 0;
+    int     m68_div = 7 * 256;      // master clocks per 68000 cycle, in 256ths (7: the console's)
+    int64_t m68_frac = 0;           // (the 256ths of a master clock the 68000 is ahead of m68_clock)
     int64_t line_start = 0;
     bool    in_z80 = false;
     int     z80_int_clear_line = -1;
-    std::unordered_map<uint32_t, std::function<void(MegaDrive&)>> pc_hooks;
+    struct PcHook { int owner; std::function<void(MegaDrive&)> fn; };
+    std::unordered_map<uint32_t, std::vector<PcHook>> pc_hooks;
     bool ram_watch = false;
     std::vector<int32_t> psg_tmp;
     std::vector<int32_t> ym_tmp;

@@ -50,12 +50,16 @@ add_executable(DisneyClassics WIN32
     src/app/png.cpp
     src/app/rewind.cpp
     src/app/ui.cpp
+    src/app/imageload.cpp
+    src/app/updatecheck.cpp
+    src/app/achexport.cpp
     src/platform/video.cpp
     src/platform/slang.cpp
     src/platform/audio.cpp
     src/platform/input.cpp
     res/app.rc
 )
+target_include_directories(DisneyClassics PRIVATE third_party/stb)   # (stb_image: the player's cover pictures)
 target_link_libraries(DisneyClassics PRIVATE mdcore
     user32 gdi32 ole32 d3d11 dxgi d3dcompiler xaudio2 xinput dinput8 dxguid dwrite winmm dwmapi shell32)
 set_target_properties(DisneyClassics PROPERTIES
@@ -68,6 +72,10 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/third_party/librashader/librashader.dll)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/third_party/librashader/librashader.dll $<TARGET_FILE_DIR:DisneyClassics>
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/third_party/librashader/LICENSE.md $<TARGET_FILE_DIR:DisneyClassics>/librashader-LICENSE.md)
 endif()
+# The Theatre menu style's title font (Luckiest Guy, Apache 2.0) next to the exe
+add_custom_command(TARGET DisneyClassics POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/third_party/fonts/LuckiestGuy-Regular.ttf $<TARGET_FILE_DIR:DisneyClassics>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/third_party/fonts/LICENSE.txt $<TARGET_FILE_DIR:DisneyClassics>/LuckiestGuy-LICENSE.txt)
 if(EXISTS ${CMAKE_SOURCE_DIR}/third_party/slang-shaders)
     add_custom_command(TARGET DisneyClassics POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/third_party/slang-shaders $<TARGET_FILE_DIR:DisneyClassics>/shaders)

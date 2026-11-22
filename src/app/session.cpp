@@ -37,8 +37,11 @@ void Session::apply_settings(const Settings& s) {
         auto g = s.cheats.find(module_->id());
         if (g != s.cheats.end()) c.cheats = g->second;
     }
+    // (not a cheat: a widescreen option, kept with achievements on)
+    if (module_ && std::string(module_->id()) == "qs" && s.qs_spawn_fix) c.cheats["spawn_fix"] = true;
     want_ = c;
     md_->vdp.sprite_limit = !s.no_sprite_limit;
+    md_->set_m68k_speed(s.cpu_speed);
     md_->ym.ladder_effect = s.ladder_effect;
     soundtrack_gain_ = s.volume / 100.0f * s.soundtrack_volume / 100.0f;
     mixer_.configure(md_->sample_rate(), out_rate_, s.audio_filter, s.volume / 100.0f * (module_ ? module_->audio_gain() : 1.0f));
@@ -164,13 +167,15 @@ void Session::mix_audio(std::vector<int16_t>& out, double adjust) {
         mdplus_->mix(&out[before], (int)((out.size() - before) / 2), out_rate_, soundtrack_gain_);
 }
 
+std::string Session::state_id() const { return module_ && md_ ? module_->state_id(*md_) : std::string(); }
+
 std::vector<uint8_t> Session::save_state(const std::string& extra) {
     std::vector<uint8_t> s = md_->save_state();
     // Append a tag: the module id (states from another game are rejected) and the configuration the ROM ran
     // with ("qs|108|cheat,cheat"), so a load can restore exactly that ROM before moving to the current settings;
     // then the app's note, if any ("|a1.00000000"), and what the soundtrack plays, if any ("|t12,34567,1,255").
     const std::string cd = mdplus_ ? mdplus_->state() : std::string();
-    std::string tag = module_ ? module_->id() : "";
+    std::string tag = state_id();
     tag += "|" + std::to_string(cfg_.ext) + "|";
     for (const auto& kv : cfg_.cheats)
         if (kv.second && tag.size() + kv.first.size() + extra.size() + cd.size() < 236) tag += kv.first + ",";
@@ -187,7 +192,7 @@ bool Session::load_state(const std::vector<uint8_t>& data, std::string* extra) {
     if (data.size() < idlen + 1) return false;
     std::string tag(data.end() - 1 - idlen, data.end() - 1);
     size_t bar = tag.find('|');
-    if (!module_ || tag.substr(0, bar) != module_->id()) return false;
+    if (!module_ || tag.substr(0, bar) != state_id()) return false;
     std::vector<uint8_t> core(data.begin(), data.end() - 1 - idlen);
     if (!md_->load_state(core)) return false;
     // The state runs on the ROM it was saved with; the current settings follow when it is safe (try_switch).
