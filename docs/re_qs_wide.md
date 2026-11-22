@@ -302,33 +302,6 @@ Round 3 QA census: 41 of the 1,036 spawn entries are deferred - the 15 swoop-in 
 falling things, Transylvania enemies (`$25`, `$2C`), `$0C`, `$52`, `$8B`, `$7D`-`$7F`, `$76`, `$B0` and the Ghosts
 `$90-$99`; all of them now appear at the camera position and screen spot they have at 4:3.
 
-**Island vines and turning round (November 2026, v1.1.1).** User report: at 21:9 the first vine of The Island
-Area 1's climbing shaft (type `$87`, entry `$8369`, x 4000 y 904, over the bottomless pit at the shaft's foot) never
-appeared. A vine ($11B26) crumbles - it deletes itself and clears its spawn flag - once Donald is 64 px or more
-above it (state 2 at `$11BFE`), so the ones he has climbed past fall away. At 4:3 the shaft's bottom vines are
-created by the original column (X+$180) at camera X 3584, when Donald is already at the bottom; from 2:1 on the
-far pass created them a cell earlier, at 3456, while he was still coming down the tunnels above - they crumbled
-off screen at once, and the original-column pass does not create non-deferred entries again. `$87` entries are
-now deferred (hook: `cmpi.b #$87,(a2)` ahead of the x test), so they are created at the 4:3 moment; the vertical
-trigger creates them as before. Check (`tools/qa/v111/qs_bottom.py`): flying down the tunnels into the shaft, the
-vine is there at every width (before: missing at 2:1 and 21:9).
-
-The same "a pass a cell early, the 4:3 pass skipped" design loses entries when the camera turns round:
-moving left, the left column is (X-$F1)>>7, so (X-$71)>>7, which 4:3 creates at the first crossing after a turn,
-comes only a crossing later; moving right (2:1 on), the original-column pass makes only deferred entries. Entries
-that went meanwhile - e.g. bridge pieces `$75`/`$8E` (Egypt), which delete themselves off screen - or that 4:3
-creates only on the way back stayed missing. The column trigger (`tst.w d2 / bmi.s` at `$19C12`) now jumps to
-`$7B4A0` for both directions (left: `subi #$F1` there; right: the far wrapper `$7B400`, or `addi #$180` up to
-16:9), and post_frame(), which sees the step `$852C -> $8524` the spawner handles next frame, switches on for the
-first crossing after a turn either the 4:3 left column (ROM word `$7B4A4`: `bra.s` -> `nop`, the code then runs
-(X-$71)>>7 before (X-$F1)>>7) or, to the right, the full original-column pass (`SPAWN_ALL_FLAG`). That crossing
-thus creates what 4:3 creates there (also defeated enemies of that column, as 4:3 does). Check
-(`tools/qa/v111/qs_turn.py`, camera driven at each area's start height, a state every 64 px, both directions,
-448 px after each turn): in the 8 areas with the most differences, turn points where 21:9 lacks an entry 4:3 has
-went from 170 to 73 of 713; `$8E` 14 -> 0, `$7D` 14 -> 2. The rest are enemies that, created a cell earlier,
-are elsewhere or gone (walkers `$1B`, birds `$4B`), and a few cases where the test's whole-area traversal fills
-Pyramid 2's 48 slots (a plain left-to-right flight through every area at 2:1 and 21:9: no free-slot failure).
-
 **Switching width mid-level (October 2026, round 3).** From 16:9 or narrower up to 2:1 / 21:9 the game has created
 columns up to (X>>7)+3, while from then on the original-column pass creates only deferred entries and the far pass
 starts at +5, so the non-deferred entries of +4 were lost (67 of 164 tested switch points). `configure()` now notes
@@ -610,3 +583,217 @@ all words `$200..$7FFFF`, mod $10000; the patched ROMs above including the NOP s
   menu (pillarbox, clean redraw on return).
 - Same demo at E=20 (`--E 20 build/qs_wide_demo_e20`): BEFORE 2..3 bad cells per frame, AFTER 0;
   HUD remapped to 360 px, masks 0..20 px.
+
+
+## simplePsyduck's fixes (v1.3)
+
+Everything from "REV 01" on was worked out by simplePsyduck in the Nintendo Switch port of this collection
+(github.com/simplePsyduck/MickeyAndDonaldCollection-NX, v1.1.2) and merged here: REV 01 support, the left trigger's
+deferred entries and the 16:9 far pass, the Duckburg blimp, the electric spark, the garbage can worms, the attract
+intro and title, the map screen's airplane, the pause and menu screens shown wide, the sleeping statues' shot test,
+the penguin twins and the optional "enemies behind Donald" catch-up. Changed: the far pass starts above 16:9 again
+(`kFarFrom` 41; the fork's 40 made 16:9 objects - and their AI - start a cell earlier than at 4:3, and three trailer runs
+planned at 16:9 took hits they don't take at 4:3), so at 16:9 the South Pole ice platform still appears at the edge.
+Left out: the fork's gameplay extras (plunger
+colours, play levels from the beginning, more bubble gum shots, weapon cycling, slowdown options).
+
+## REV 01
+
+REV 01 (1,310,720 bytes, header serial `GM 00004054-01`, CRC32 `1801098B`) is the same program assembled again, so
+the whole of this document applies to it with its addresses moved, and `src/game/qs.cpp` runs both:
+
+- The code sits a little further up, a few bytes per edit (+$4C at `$26C8`, +$18A at `$19C14`, up to +$200 by the end of
+  the code at about `$3D700`); jsr/bsr that were absolute became pc-relative in places. Data and sound banks sit $C0000 higher
+  (a $C0000-byte hole of zeros starts at `$40000`). RAM is laid out the same, so everything in RAM (camera, objects,
+  achievements, the level select) is shared.
+- `Rev::at(a)` maps each REV 00 address used by the patches to REV 01's (`kRev01Sites`, made and checked by
+  `tools/re/qs_rev01.py REV00.bin REV01.bin`). Every patched instruction is identical in both releases except the
+  displacement words of `$35A0` (area load: `1A98`, `09F4`), `$3FCE` (stream call: `E748`, retargeted to `E738`) and `$9A9A`
+  (object despawn: `1C8C`, `1C86`), which `Rev` carries.
+- The added code (REV 00 `$7B000..$7B4C8`) goes to `$13F000` (free `$FF` fill in REV 01), at the same offsets.
+- Sound: the SFX bank is at `$1392A6` ($E24 bytes: it is a revised bank, 6 bytes longer), the ending bank at `$13A0CA`, the
+  sound request routine at `$13FED8`; the Z80 driver itself is byte-identical (ROM `$1384E0`).
+- Native differences (not ours): some enemy / object placements, a few sprites, a revised SFX bank, and a plunger that sticks to a wall
+  at a slightly different spot (REV 01 snaps it, in the cases seen, to x = 368 where REV 00 gives 369..374). The widescreen patches don't touch these.
+- Check run: `ModuleMD` on both ROMs, same scripted input, widths 40, 64 and 108 over the first levels: the patch
+  sets have the same shape (39 ranges, 698 bytes at E=108) and the frames match except where REV 01 differs natively.
+
+### MD+ soundtrack patches on REV 01
+
+An MD+ pack's patch is made for one release (CRC32 in the .bps). The sample pack's patch (REV 00, 512 KB -> 1 MB) changes
+three things: the checksum, 5 bytes at `$7FEF5` (the sound request's `jsr $7FF0E` + `nop` becomes `jsr $80000`), and adds
+about 1 KB of code after the end of the ROM at `$80000` (it calls `$7FF0E` itself, then writes the MD+ commands to
+`$3F7FA` / `$3F7FE` for each music ID). `QuackShot::port_patch` carries such a patch to REV 01: the hook moves by $C0000
+(`$13FEF4`), the added code goes to `$140000` with its `jsr $7FF0E` made `jsr $13FF0E`. REV 01's last $2BC bytes of sound
+code are REV 00's byte for byte except 8 bytes (none at the hook); the sound data, the ending bank and the free space
+before them have other shifts (`tail_shift`), and a change anywhere else is refused. With REV 00's ROM present, the
+result is checked: the music IDs must ask for the same CD tracks (`soundtrack_track_map`). Without it, the edits are
+read from the .bps's literal data (`bps_literal_edits`) and only the end-of-ROM sound code is touched.
+
+## Option: enemies that spawn behind the player ("spawn_fix", round 2)
+
+Some spawn entries are filed far left of their cell, and the right trigger's original-column pass (the 4:3 one) creates
+them behind Donald as the camera moves right: Mexico's swoop-in bird `$0D` at screen x -1..-3 (inside a wide view's left
+strip), the Island's golden Scrooge statues `$B0` at x 30 / 62 (inside even the 4:3 view). Round 1 left them to a later
+pass, which put them outside the view but also late: a bird made after Donald had moved on, or never, if he stopped.
+
+Now (`GameConfig` key `spawn_fix`, Options > Video, off by default) they are created at the 4:3 moment and moved:
+
+- The entry loop writes the new object's X at `$19CC4` (`move.b (a2)+,$11(a3)` / `bra.s $19CCE`); that is a `jsr` to
+  `POST_AT` (code + `$500`), which does the same, returns to `$19CCE`, and for the types in `kBehindTypes`
+  (`$0D`, `$7C`, `$4B`, `$B0`) clears field `$3E`, then - if the caller is the column loop (`28(sp)` = `$19C52`) in the
+  wrapper's original-column pass (`32(sp)` = wrapper + `$0C`; below 16:9 the trigger now goes through a one-pass wrapper
+  too) - moves it: birds whose screen x is in (-E-24, 160) to x = -E-24; statues whose x is in (-E-24, 96) all by the
+  same 96+E+24 px, so a group keeps its spacing. Field `$3E` (never written by these types) gets the distance.
+- `post_frame()` gives such an object the distance back until `$3E` is 0, so it rejoins its 4:3 track. It eases in
+  (round 4): the extra speed is left/40 + 1/4 px a frame (at most 3) - fast while out of view, fading out to the
+  object's own speed. `$3E` holds the pixels left in its low 12 bits and the carried sixteenths in the high 4
+  (`WAKE_AT` masks them off). Slot 19 statue: on its 4:3 track from frame 164; slot 16 bird: from frame 127.
+  The bird's flight script is a fixed ~120 px and it only swoops once Donald is within 24 px (`$DB26`): without the
+  catch-up it ended its flight E+24 px short of him. Check (slot 16 state, Mexico, 16:9): created at frame 46 like 4:3, at
+  x -64; on the 4:3 track by frame 116; swoops at x 116 at frame 136, as at 4:3.
+- A statue wakes when Donald is within 120 px of it (`$ECC4`: `move.w $A2D0,d0 / sub.w $10(a0),d0`, against `$78` /
+  `-$78`). That is a `jsr` to `WAKE_AT` (code + `$5C0`) with the option, which also subtracts `$3E`: a moved statue
+  measures from where it would be at 4:3, so it wakes at the 4:3 moment and walks in from beyond the view's edge, like
+  the birds (round 2 had it waiting off screen). Check (slot 19 state, Island, 16:9): the statue made at x 51 (awake at
+  once at 4:3) is made at -95, awake, and joins its 4:3 track by frame 220. The left limit of the walkers (`$13A6E`,
+  -64 at 4:3) moves out to -64-(96+E+24) with the option, or they would stand still.
+
+## Electric spark on the Duckburg power lines (round 3)
+
+The spark `$08` (Gyro's workshop) shows and buzzes only while Donald is within 128 px of it (`$E834`: Donald X - its X,
+against `$80` / `-$80`; it then blinks every other frame). At 4:3 that covers the view; on a wide one it appeared well
+inside it. The distance is now `$80` + 2E + 32 (16:9: 240), so it shows from beyond the view's edges (slot 14 state,
+16:9: first shown at screen x 372, edge 360). Its only on-screen test (`$EBD8`) gates the buzz sound alone.
+
+## 16:9 far pass, the Duckburg blimp (round 2)
+
+- `kFarFrom` = 40: the far pass (one cell further, deferred entries) now runs from 16:9 on, not only above it. At 16:9
+  the original column put entries filed close to their cell's start at x = 384 - r - d: the South Pole ice platform `$3B`
+  at 382 (wide: its left edge at about 345, inside the 360-px view), the penguin `$4B` (d = 66) at 318. Now 510 / 446.
+  `module_state[1]` records the far pass in bit 16; a state from an older build at 16:9 counts as narrow, so the
+  narrow -> wide catch-up makes that column's entries (as at 4:3) instead of losing them.
+- The Mickey blimp `$17` waits hidden at camera X - `$1C` (`$D7DA`), then crosses the sky from there or from + `$178`
+  more (`$D7F6`), and hides when its on-screen test (`$D76E`) fails. `$1C` -> `$1C`+E, `$178` -> `$178`+2E, and
+  `$D772` joins the wide on-screen callers: it starts and ends beyond the wide view's edges.
+
+## Map screen airplane (round 4)
+
+The airplane `$B1` starts at x -32 (`$11918`) and flies 2 px a frame for the 180 frames the map stays (`$9D66`, timer
+`$A346`; `$9E64` counts it down), edge to edge of the 4:3 view. Wide: it starts at -32-E and the timer is 180+E, so it
+crosses the whole view and the cut comes with the same part of it still showing as at 4:3. The map stays centred.
+
+## Round 5
+
+**Map airplane.** The map screen (mode 2) was shown 4:3, so the airplane could not be seen crossing the wide view
+whatever its path. It is now a wide screen (`map_screen()`; `line_hook` blanks both planes beside the 320-px picture,
+sprites stay). The plane starts at -E-48 (`$11918`), flies 3 px a frame (`$11924`) and the timer (`$9D66`) is
+(430+2E)/3+2 frames, so it enters from beyond the left edge and is past the right one when the screen ends (16:9: 172
+frames, 180 at 4:3).
+
+**Left trigger: deferred entries.** Walking left, 4:3 creates column (X-$71)>>7; the wide pass one cell further.
+Entries filed more than 256 px right of their cell (Egypt's guards `$79`, made off the 4:3 view's right edge to come
+up behind Donald) were therefore made a cell early, in the middle of the view. The trigger now runs both columns
+(`TRIGGER_AT`: 4:3 column, return +$10; wide column, return +$1C) and the hook (`HOOK_AT`, now code+$600, written with
+`Asm`) leaves those entries to the 4:3 column's pass, as it does on the right. The hook is installed at every width.
+`LEFT_FLAG` / `SPAWN_ALL_FLAG` are `moveq #0/1,d6` words at hook+6 / hook+2. With the spawn option, `POST_AT` moves a
+guard made in the view's right half to X+320+E+24 and `$3E` gets the distance with bit 11 set (catch-up to the left).
+Check (slot 5 state, 16:9): made at frame 121 as at 4:3, at screen x 384, on its 4:3 track from frame 191.
+
+**Attract intro, title, demos** (always on in widescreen; round 5 had a toggle, removed in round 6).
+- Treasure `$3A`: created when Donald's timer is `$40` (`$B0C8`), at x `$1E0` (`$B5DE`), moving `$40` frames (`$B5F2`);
+  all three + E.
+- After the cast scroll the intro was 4:3. `title_screen()` now keeps it wide; `line_hook` blanks plane A beside the
+  picture and keeps plane B only where the map picture is. The picture slides in by H scroll 0 -> -320 (per-line
+  table): the line is moved right by (320+scroll)*E/320, so it comes in from the view's edge and lands on time.
+- Donald `$36`: x `$40` - d, `$3C` + d/2 frames (`$B35E`, `$B37E`); plane `$38`: x `$200` + d, `$90` + d/2 frames
+  (`$B480`, `$B4A6`); d = E rounded up to even. The title appears d/2 frames later for each.
+- The demos (mode 7) count as gameplay in `wide_gameplay()`. The ROM patches were always active in them, so they
+  play as before; only the picture is wide.
+
+## Round 6
+
+India's snake charmers `$52` come as a pair made in the same pass, one ahead and one behind Donald inside the 4:3 view
+(slot 7 state: screen x 46). With the spawn option the one behind is handled like the birds: made at X-E-24 and eased
+back to its 4:3 track. Its basket `$53` copies the charmer's X every frame (`$102DA` in REV 01) and needs nothing.
+`POST_AT` / `WAKE_AT` moved to code + `$700` / `$800` for room.
+
+## Round 7
+
+Garbage can worms `$10` (Duckburg): their handlers test the head with the on-screen routine (`$D304`, `$D33C`, `$D440`,
+`$D4F2`) and return at once when it is off screen, so the worm stands still. It leaps from its can to the next, 176 px
+away; near the view's edge it froze mid-leap with its body `$14` in view. `ON_SCREEN` gives these four callers
+(`kWormCallers`) the bounds -224-E .. 544+E. Check (slot 7/8/9 states, REV 00, 16:9 and E = 108): every worm keeps
+leaping can to can.
+
+## Round 8: catch-up pace and sprite cycles
+
+Option renamed "Adjust spawns behind player" (`spawn_fix` as before).
+- All objects animate through `$07` (frame), `$08` (tick) and `$09` (period). While an enemy catches up, `post_frame`
+  adds to its tick the frames' worth of the extra pixels at its own pace (birds 1.5 px a frame, others 1; never past
+  the wrap), so the stride keeps step with the ground covered.
+- Pace: left/64 + 1/8 px a frame, at most 1.5 (statue, slot 19: on its 4:3 track after about 210 frames). The birds
+  `$0D`/`$7C` and the penguin `$4B` keep left/40 + 1/4, at most 2: the bird attacks at the end of its script only if
+  Donald is within 24 px, and with the gentle curve it arrived too late and flew off (slot 16: attack at frame 134
+  as at 4:3).
+- Snake charmers `$52` stand for a 60-frame cycle (4 frames of 15) and step 11 px when it wraps; far from Donald they
+  shuffle back and forth. Sliding them looked like fast walking. Now the cycle is hurried (3, 2, then 1 extra tick a
+  frame) and the distance is added to the steps only (rem/5, 15 down to 3 px a step). Their own behaviour differs
+  from 4:3 afterwards (it depends on where Donald is), which is accepted.
+
+## Round 9: pause screen
+
+The pause screen (mode 8) was shown 4:3. It is now wide (`pause_screen()`): `line_hook` lays the status bar out as in
+play (`hud_map`, anchored or not) and, above it, repeats the green chequered background outwards - the pattern has a
+16-px period and fills the picture's outer 16 px on both sides, so each margin pixel is the one 16 px further in.
+`post_frame` leaves the level-edge masks off while paused; `pre_frame` keeps `module_state[3]` (the view's X) as it
+was, since the scroll table is the pause screen's - the first frame back in play would otherwise get a wrong mask.
+The two frames of the switch (mode 8 step 1, display blanked by the game) stay wide, so the bars do not blink.
+
+## Round 10
+
+- **Snake charmer behind the blocks.** A moved charmer stands behind India's block stacks; its step (`$1013A`: 11 px in
+  the direction of `$36` bit 0) is undone and the direction flipped when the terrain probe returns 6 (`$1014C`,
+  `$1015E` -> `$1018A`), so it paced there. With the spawn option, while `$3E` != 0, `CHARM_AT` (code + `$840`) makes
+  it (and its basket) face right and `CWALL_AT` (+ `$870`) ignores the wall. `post_frame` now counts its own 11 px
+  as well as the added ones, so `$3E` is 0 where 4:3 made it - past the blocks - and it is its own again.
+- **Sleeping statues and shots.** Statue state 1 (`$ECC4`) only tests Donald's distance; shots flew through. It now
+  calls the shot test the other states use (`$B8CE`; a0 = enemy, a1 = shot, d7 != 0 on a hit) with the walking
+  frame's hit box (`$25` = `$C7`; the sleeping frame has 0 = none) and gives the shot its target (`$30(a1)` = statue,
+  `bset #4,$E(a0)`), as the awake states do: the plunger goes to state 4, then 5 (drops). `$0F` and `$25` are
+  cleared again, the statue stays asleep. This is in `WAKE_AT` and applies whenever widescreen is on.
+
+## Round 11: the snake charmer over the blocks
+
+The charmer moved back stood over India's block stack: after each step the terrain probe (`$158CA`, called at
+`$10148` / `$1015A`) lifted it onto the blocks (y 192 -> 176) and it stayed up there past them, pacing at their wall.
+Now `CWALL_AT` replaces the whole "bsr probe / cmpi #6,d7 / beq wall" (its bsr displacement differs between the
+releases: computed from `Rev::at`, listed in `qs_rev01.py`'s RELOCATED) and skips the probe while `$3E` is not 0.
+`$3E` stays non-zero for `kCharmerExtra` (5) more of its own steps after the catch-up (bit 15 + steps left), so it is
+well clear of the blocks before the terrain applies again. Check (slot 7 states, 16:9 and E = 108): y 192 all along,
+as at 4:3, walking on to the right afterwards.
+
+## Round 12
+
+The spark patch (`$E834`) had been lost from `wide_patches` in round 4 (an edit replaced the lines after it). It is
+back; check (slot 14 state, 16:9): first shown at screen x 372, edge 360.
+
+## Round 13
+
+- **Pause screen margins.** The right margin repeated the picture's outer 16 px, which are not plain background where a
+  dialog box or a panel reaches the edge ("DONALD USED IT..." after using an item): its border came out as stripes.
+  Both margins now repeat the picture's leftmost 16 px, which are always plain, with the pattern's phase (`x - E` mod 16).
+- **START / OPTIONS menu and the options screen (mode `$0B`).** Shown wide now (`menu_screen()`): the chequered
+  background is plane B here (plane A in the pause screen), 320 px with nothing beyond it, so the same margin fill is
+  used (`repeat_background()`); `info.gameplay` is set for the mode so the session no longer pillarboxes it.
+- **Penguin twins.** The South Pole's sliding penguins `$4B` are filed twice in the spawn list - the same
+  Y and X in two cells (slot 12 state: `$FF812A` in cell column 25 and `$FF8193` in column 21), one for each direction
+  Donald comes from, so that one is made off the edge either way. At 4:3 the cull at camX+512 removes the one made
+  too far out; the wide despawn window keeps both, so crossing a column boundary back and forth made a second (third...)
+  penguin at the same place. The entry hook's last jump goes through `DEDUP_AT` (code + `$900`; in the fork only with
+  the spawn option, here in every wide mode, as the twins come from the despawn window either way):
+  for an entry of type `$4B` it looks for a live `$4B` object whose entry (`$2E` points at its spawned byte; Y is at +2,
+  X at +4 from it) has the same Y and X, and if there is one the entry is skipped (carry set, flag left clear) like a
+  deferred one, so it is made after the first penguin has gone. Tested by running the added code on the 68000 core with
+  RAM from slots 11-13 (twin alive: skipped; no twin / other type: reaches the free-slot search with a3/d6 as the
+  game sets them).
