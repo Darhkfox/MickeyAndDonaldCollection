@@ -1,8 +1,8 @@
 # Mickey & Donald Collection — PC Edition
 
-A Windows port of three Sega Mega Drive / Genesis classics, with a launcher, widescreen up to 21:9,
-modern display options, gamepad support, cheats, level select, save states, fast forward / rewind and a
-music player:
+A Windows, Linux / Steam Deck and Android port of three Sega Mega Drive / Genesis classics, with a launcher,
+widescreen up to 21:9, modern display options, gamepad support, cheats, level select, save states, fast
+forward / rewind and a music player:
 
 - **Castle of Illusion Starring Mickey Mouse** (1990) — 1 player
 - **QuackShot Starring Donald Duck** (1991) — 1 player
@@ -53,6 +53,19 @@ rewind when those are switched on. A Bluetooth or USB controller works too (Xbox
 others, by button position), and hides them; the Back gesture or button opens the pause menu. Menus, the
 launcher and the music player work by tapping and dragging. The first start picks the widest widescreen mode
 that fits the screen (2:1 on most phones).
+
+**On Linux and the Steam Deck** (64-bit x86 Linux with OpenGL ES 3.0, i.e. any current Mesa or NVIDIA driver):
+1. Download `Mickey-and-Donald-Collection-v<version>-x86_64.AppImage` from the Releases page and make it
+   executable (file manager: *Properties → Permissions → Is executable*, or `chmod +x` it).
+2. Put the ROMs next to the AppImage, or in a `roms` folder beside it.
+3. Run the AppImage. On the Steam Deck, in Desktop Mode: Steam → *Games → Add a Non-Steam Game to My Library…*
+   → *Browse…* → pick the AppImage. It then starts from Game Mode like any other game, the Deck's controls
+   working as a gamepad; the first start picks 16:10 widescreen for the Deck's screen.
+
+The Linux build has the same games and options as Windows except the slang shaders, the monitor choice, High
+Frame Rate and the *Other Controllers* switch. Its menus use DejaVu Sans (bundled). It is new: built and
+tested automatically on every change, but not yet tried on a real Steam Deck, so reports are welcome on the
+[issues page](https://github.com/Darhkfox/MickeyAndDonaldCollection/issues).
 
 ## Features
 
@@ -213,7 +226,8 @@ Steam Input can make one controller appear twice; if one pad moves both players,
 Settings are stored in `settings.ini`, earned achievements in `achievements.ini`, save states in `saves\`,
 screenshots in `screenshots\`; soundtrack packs go in `soundtracks\`, launcher pictures in `covers\`. These live
 next to the exe (the folder is portable), or in `%LOCALAPPDATA%\Mickey and Donald Collection` if that
-folder isn't writable. Delete `settings.ini` to restore the defaults.
+folder isn't writable. Delete `settings.ini` to restore the defaults. On Linux the AppImage keeps them in
+`~/.local/share/MickeyAndDonaldCollection` (`$XDG_DATA_HOME` if set); ROMs can go in its `roms` folder too.
 
 ## Building from source
 
@@ -248,15 +262,33 @@ The APK ends up in `android/app/build/outputs/apk/`. Release builds are signed w
 (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`) and its keystore are present; both stay out of git.
 A log line every 5 seconds gives the frame rate and the work per frame (`adb logcat | findstr fps`).
 
+### Linux
+
+The Linux build uses the Android build's SDL2 / OpenGL ES layer (`src/platform/sdl`), with FreeType for the
+menus' text. On Ubuntu 22.04 or later (or Debian):
+
+```
+sudo apt install cmake g++ libsdl2-dev libfreetype-dev libgles-dev libegl-dev fonts-dejavu-core
+cmake -S . -B build-linux -DCMAKE_BUILD_TYPE=Release
+cmake --build build-linux -j
+linux/build_appimage.sh build-linux/bin/DisneyClassics   # dist-linux/...-x86_64.AppImage (fetches linuxdeploy)
+```
+
+`build-linux/bin/DisneyClassics` also runs as it is (fonts are found in the system). GitHub Actions
+(`.github/workflows/linux.yml`) builds on Ubuntu 22.04 so the AppImage runs on SteamOS and current distros,
+runs `linux/smoke_test.sh` (the launcher, Options and Credits on a virtual display, screenshots checked), and
+attaches the AppImage to the release when a version tag is pushed.
+
 ### Source layout
 
 | Path | Contents |
 |---|---|
 | `src/core/` | Mega Drive hardware: 68000, Z80, VDP (with widescreen rendering: wider line buffer, 10-bit sprite X, per-line hooks), YM2612, SN76489, save states |
 | `src/game/` | Per-game modules (`coi.cpp`, `qs.cpp`, `woi.cpp`): ROM patches, widescreen rules, HUD layout, edge masks, cheats, level select, sound lists; `common.cpp` applies patch lists |
-| `src/app/` | Launcher, sessions, menus, music player / sound test, rewind, settings, ROM finder (`romfind.cpp`, `unzip.cpp`), PNG writer, touch controls (`touch.cpp`); per platform: `app_win.cpp` / `app_android.cpp` (window, main loop) and `sys_win.cpp` / `sys_android.cpp` (files, folders, links) |
-| `src/platform/` | Windows: Direct3D 11 video and DirectWrite UI text, XAudio2 audio, keyboard / XInput / DirectInput input. `android/`: OpenGL ES 3.0 video (the same filters as GLSL; UI text from Android's own fonts), SDL audio and controllers |
+| `src/app/` | Launcher, sessions, menus, music player / sound test, rewind, settings, ROM finder (`romfind.cpp`, `unzip.cpp`), PNG writer, touch controls (`touch.cpp`); per platform: `app_win.cpp` / `app_android.cpp` / `app_linux.cpp` (window, main loop) and `sys_win.cpp` / `sys_android.cpp` / `sys_linux.cpp` (folders, links; `sys_posix.cpp` has the files part both Android and Linux use) |
+| `src/platform/` | Windows: Direct3D 11 video and DirectWrite UI text, XAudio2 audio, keyboard / XInput / DirectInput input. `sdl/` (Android and Linux): OpenGL ES 3.0 video (the same filters as GLSL; UI text from Android's own fonts, or FreeType on Linux), SDL audio and controllers |
 | `android/` | Gradle project; `MDActivity.java` adds the ROM picker and the UI font rasteriser to SDL's activity |
+| `linux/` | AppImage script and desktop entry, and the smoke test the Linux CI runs |
 | `src/tools/mdtool.cpp`, `tools/mdt.py` | Headless core as a DLL with a Python wrapper, used for all the reverse engineering and testing |
 | `tools/m68dis.py` | 68000 disassembler (capstone) used during development |
 | `tools/re/` | Reverse-engineering scripts behind the notes in `docs/` |
@@ -348,11 +380,13 @@ A log line every 5 seconds gives the frame rate and the work per frame (`adb log
   port of this collection ([MickeyAndDonaldCollection-NX](https://github.com/simplePsyduck/MickeyAndDonaldCollection-NX)).
 - The port's own code is released under the MIT licence (`LICENSE`). The Mega Drive core is written from
   scratch. UI text uses the system font (Segoe UI through DirectWrite on Windows, Android's own font on
-  Android); the Theatre style's titles use Luckiest Guy by Astigmatic, Apache License 2.0
-  (`third_party/fonts`, `LuckiestGuy-LICENSE.txt` next to the exe).
+  Android) and on Linux DejaVu Sans (Bitstream Vera licence, bundled in the AppImage with its licence) through
+  FreeType (FreeType License), with a glyph rasteriser from simplePsyduck's Switch port; the Theatre style's
+  titles use Luckiest Guy by Astigmatic, Apache License 2.0 (`third_party/fonts`, `LuckiestGuy-LICENSE.txt`
+  next to the exe).
 - Cover pictures are read with stb_image by Sean Barrett, public domain (`third_party/stb`).
-- The Android build uses SDL2 by Sam Lantinga and contributors, zlib licence (fetched by
-  `android/fetch_sdl.ps1`, not stored in this repository).
+- The Android and Linux builds use SDL2 by Sam Lantinga and contributors, zlib licence (Android: fetched by
+  `android/fetch_sdl.ps1`, not stored in this repository; Linux: the system's, bundled in the AppImage).
 - Slang shaders run through librashader by Ronny Chan (chyyran), Mozilla Public License 2.0
   (`librashader-LICENSE.md` next to the exe). The bundled presets are unmodified files from the libretro
   slang-shaders collection, each with its own licence (public domain, GPL v2 or later, MIT): see

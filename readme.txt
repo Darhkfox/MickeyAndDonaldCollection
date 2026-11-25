@@ -1,5 +1,5 @@
 ================================================================================
-  MICKEY & DONALD COLLECTION  --  PC Edition V1.2 - 5th Nov 26
+  MICKEY & DONALD COLLECTION  --  PC Edition V1.3 - 22nd Nov 26
 ================================================================================
 
   A custom PC port of three Sega Mega Drive / Genesis classics, with a
@@ -11,8 +11,9 @@
        Donald Duck ....................................... 1992, 1-2 players
 
   The console hardware (68000 and Z80 CPUs, VDP graphics, YM2612 and PSG
-  sound) is reproduced in native code, so the games run directly on Windows
-  -- no separate emulator needed -- with a set of modern extras: true
+  sound) is reproduced in native code, so the games run directly on Windows,
+  Linux / Steam Deck and Android -- no separate emulator needed -- with a
+  set of modern extras: true
   widescreen up to 21:9 ultrawide, fullscreen, filters and colour profiles,
   save states, fast forward and rewind, 53 achievements, and an in-game
   menu (cheats, level select, music player and sound test).
@@ -70,6 +71,39 @@
      launcher says "Wrong ROM version", names the file and says what it is:
      "the European version", "the Japanese version", or "a modified copy
      or a bad dump". Swap it for the USA ROM listed above.
+
+
+--------------------------------------------------------------------------------
+  LINUX AND STEAM DECK
+--------------------------------------------------------------------------------
+
+  The Linux version is a single file,
+  Mickey-and-Donald-Collection-v<version>-x86_64.AppImage (64-bit x86
+  Linux with OpenGL ES 3.0 -- any current Mesa or NVIDIA driver).
+
+  1. Make it executable: in the file manager, Properties > Permissions >
+     "Is executable" (or chmod +x it in a terminal).
+  2. Put your ROMs next to the AppImage, or in a "roms" folder beside it.
+  3. Double-click the AppImage.
+
+  STEAM DECK
+     In Desktop Mode, open Steam > Games > Add a Non-Steam Game to My
+     Library... > Browse... and pick the AppImage. It then starts from Game
+     Mode like any other game, with the Deck's controls working as a
+     gamepad (View opens the pause menu). The first start picks 16:10
+     widescreen to fill the Deck's screen.
+
+  Settings, achievements, save states, screenshots, launcher pictures
+  (covers) and soundtrack packs (soundtracks) are kept in
+  ~/.local/share/MickeyAndDonaldCollection; ROMs can go in a "roms" folder
+  there too. Wherever this readme says "next to DisneyClassics.exe" or
+  %LOCALAPPDATA%, on Linux it means that folder.
+
+  Everything works as on Windows except the slang shaders, the monitor
+  choice, High Frame Rate and the Other Controllers switch (Windows only).
+  The Linux version is new: it is built and tested automatically, but
+  hasn't been tried on a real Steam Deck yet -- reports are welcome on the
+  GitHub issues page.
 
 
 --------------------------------------------------------------------------------
@@ -677,7 +711,8 @@
   page too (click it, or tap it on Android).
 
   Thanks to simplePsyduck for QuackShot REV 01 support and many QuackShot
-  widescreen fixes, from the Nintendo Switch port of this collection:
+  widescreen fixes, from the Nintendo Switch port of this collection (the
+  Linux version's text drawing comes from it too):
      https://github.com/simplePsyduck/MickeyAndDonaldCollection-NX
 
   The port's own code is released under the MIT licence; the source is on
@@ -685,7 +720,10 @@
 
   The Theatre style's titles use Luckiest Guy by Astigmatic (Apache License
   2.0, LuckiestGuy-LICENSE.txt). Cover pictures are read with stb_image by
-  Sean Barrett (public domain).
+  Sean Barrett (public domain). The Android and Linux versions use SDL2
+  (zlib licence); the Linux version also FreeType (FreeType License) and
+  the DejaVu Sans font (Bitstream Vera licence, fonts/DejaVu-LICENSE.txt
+  inside the AppImage).
 
   Castle of Illusion, QuackShot and World of Illusion (c) 1990-1992 Sega.
   Mickey Mouse and Donald Duck (c) Disney. This is an unofficial fan
