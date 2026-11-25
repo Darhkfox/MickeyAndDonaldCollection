@@ -1,6 +1,6 @@
 # Native part of the Android build: SDL2 from source (libSDL2.so) and the port itself (libmain.so, loaded by
 # SDLActivity, which calls its SDL_main). The emulation core, game modules and app logic are the Windows
-# build's; only the platform layer differs (src/platform/android, src/app/*_android.cpp).
+# build's; only the platform layer differs (src/platform/sdl, shared with the Linux build; src/app/*_android.cpp).
 cmake_minimum_required(VERSION 3.18)
 project(MickeyDonaldAndroid C CXX)
 
@@ -42,6 +42,7 @@ add_library(main SHARED
   ${SRC}/app/romfind.cpp
   ${SRC}/app/unzip.cpp
   ${SRC}/app/sys_android.cpp
+  ${SRC}/app/sys_posix.cpp
   ${SRC}/app/png.cpp
   ${SRC}/app/rewind.cpp
   ${SRC}/app/ui.cpp
@@ -49,9 +50,9 @@ add_library(main SHARED
   ${SRC}/app/imageload.cpp
   ${SRC}/app/updatecheck.cpp
   ${SRC}/app/achexport.cpp
-  ${SRC}/platform/android/video_gles.cpp
-  ${SRC}/platform/android/audio_sdl.cpp
-  ${SRC}/platform/android/input_sdl.cpp
+  ${SRC}/platform/sdl/video_gles.cpp
+  ${SRC}/platform/sdl/audio_sdl.cpp
+  ${SRC}/platform/sdl/input_sdl.cpp
 )
 set_target_properties(main PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 target_include_directories(main PRIVATE ${SRC} ${SRC}/../third_party/stb)

@@ -1,6 +1,6 @@
 // Android: SDL window and event loop, touch / controller / key events, app lifecycle, and the ROM picker.
 #include "app.h"
-#include "../platform/android/sdl_keys.h"
+#include "../platform/sdl/sdl_keys.h"
 #include <SDL.h>
 #include <SDL_syswm.h>
 #include <android/native_window.h>

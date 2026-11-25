@@ -1,0 +1,44 @@
+# Linux (desktop and Steam Deck) build: compiles on Ubuntu 22.04 (its glibc runs on SteamOS and current distros),
+# runs a hidden smoke test (launcher, Options, Credits with software rendering; no ROMs), and packs an AppImage.
+# The AppImage and the test's screenshots are kept as the run's artifact; a version tag also attaches the AppImage
+# to that release.
+name: Linux build
+on:
+  push:
+    branches: [main, linux]
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake g++ libsdl2-dev libfreetype-dev libgles-dev libegl-dev \
+            fonts-dejavu-core xvfb xauth libgl1-mesa-dri libegl1 libgles2 file
+      - name: Build
+        run: |
+          cmake -S . -B build-linux -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-linux -j"$(nproc)"
+      - name: Smoke test
+        run: sh linux/smoke_test.sh build-linux/bin/DisneyClassics smoke
+      - name: AppImage
+        run: sh linux/build_appimage.sh build-linux/bin/DisneyClassics
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-build
+          path: |
+            dist-linux/*.AppImage
+            smoke/*.png
+            smoke/log.txt
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${GITHUB_REF_NAME}" dist-linux/*.AppImage --clobber

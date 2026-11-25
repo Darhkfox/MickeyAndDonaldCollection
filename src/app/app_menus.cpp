@@ -163,7 +163,7 @@ void App::open_options_menu(bool from_launcher) {
     p.items.push_back(MenuItem::slider("Controls Opacity", 10, 100, 5, [this]() { return settings_.touch_opacity; },
                                        [this](int v) { settings_.touch_opacity = v; }, [](int v) { return std::to_string(v) + "%"; }));
 #endif
-#ifdef _WIN32   // (keyboard hotkeys: a phone rarely has a keyboard)
+#ifndef __ANDROID__   // (keyboard hotkeys: a phone rarely has a keyboard)
     p.items.push_back(MenuItem::header("Hotkeys (changed under Controls)"));
     p.items.push_back(MenuItem::info("Menu", [this]() { return hotkey_text(HK_MENU); }));
     p.items.push_back(MenuItem::info("Quick save", [this]() { return hotkey_text(HK_SAVE_STATE); }));
@@ -256,9 +256,11 @@ MenuPage App::video_page() {
     MenuPage p;
     p.title = "Video";
     auto changed = [this]() { apply_settings(); };
-#ifdef _WIN32
+#ifndef __ANDROID__
     p.items.push_back(MenuItem::choice("Display Mode", {"Windowed", "Fullscreen"}, [this]() { return settings_.fullscreen ? 1 : 0; },
                                        [this, changed](int v) { settings_.fullscreen = v == 1; changed(); }));
+#endif
+#ifdef _WIN32
     {
         std::vector<std::string> labels;
         for (const MonitorInfo& m : enum_monitors()) labels.push_back(m.label);
@@ -270,6 +272,8 @@ MenuPage App::video_page() {
         }, [this](int v) { move_to_monitor(v); save_settings(); },
         "Which display the game uses. You can also drag the window to another screen."));
     }
+#endif
+#ifndef __ANDROID__
     MenuItem ws = MenuItem::slider("Window Size", 1, 6, 1, [this]() { return settings_.window_scale; },
                                    [this](int v) { settings_.window_scale = v; resize_window_to_scale(); },
                                    [](int v) { return std::to_string(v) + "x"; }, "Size of the window in windowed mode.");
@@ -322,9 +326,11 @@ MenuPage App::video_page() {
         return n.size() > 7 ? n.substr(0, n.size() - 7) : n;
     };
     p.items.push_back(slang);
-    p.items.push_back(MenuItem::toggle("VSync", [this]() { return settings_.vsync; }, [this, changed](bool v) { settings_.vsync = v; changed(); }));
 #else
     p.items.push_back(filter);
+#endif
+#ifndef __ANDROID__
+    p.items.push_back(MenuItem::toggle("VSync", [this]() { return settings_.vsync; }, [this, changed](bool v) { settings_.vsync = v; changed(); }));
 #endif
     MenuItem bfi = MenuItem::toggle("Black Frame Insertion", [this]() { return settings_.black_frames; }, [this](bool v) {
         settings_.black_frames = v;

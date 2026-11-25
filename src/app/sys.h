@@ -1,6 +1,6 @@
 // Small OS layer for the app: files, folders, paths and links. Paths are std::wstring on every platform
 // (Windows file APIs take them directly; elsewhere they are converted to UTF-8 when a file is opened).
-// Implementations: sys_win.cpp (Windows), sys_android.cpp (Android).
+// Implementations: sys_win.cpp (Windows); sys_android.cpp (Android) and sys_linux.cpp (Linux), both with sys_posix.cpp.
 #pragma once
 #include <cstdint>
 #include <cstdio>

@@ -6,3 +6,5 @@ readme.txt text eol=crlf
 *.rc text eol=crlf
 *.ico binary
 *.png binary
+# Linux scripts keep Unix line endings
+*.sh text eol=lf

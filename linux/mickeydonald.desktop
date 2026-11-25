@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Mickey & Donald Collection
+Comment=Castle of Illusion, QuackShot and World of Illusion (bring your own ROMs)
+Exec=DisneyClassics
+Icon=mickeydonald
+Categories=Game;
+Terminal=false

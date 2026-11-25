@@ -186,7 +186,7 @@ void App::bind_hotkey_pad(int h, uint32_t button) {
 std::string App::hotkey_text(int h) const {
     const uint32_t b = settings_.hotkey_pads[h];
     const std::string pad = b ? Input::pad_button_name(b) : std::string();
-#ifdef _WIN32
+#ifndef __ANDROID__
     const int vk = settings_.hotkey_keys[h];
     const std::string key = vk ? Input::key_name(vk) : std::string();
     return key.empty() ? (pad.empty() ? std::string("-") : pad) : pad.empty() ? key : key + " / " + pad;
