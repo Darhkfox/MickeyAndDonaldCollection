@@ -197,6 +197,10 @@ bool Menu::touch(MenuPage& p, const UiInput& in) {
         p.scroll -= in.drag / row_;
         p.free_scroll = true;
     }
+    if (in.wheel != 0) {   // (the mouse wheel: three rows a notch)
+        p.scroll += in.wheel * 3;
+        p.free_scroll = true;
+    }
     if (!in.tap) return false;
     auto inside = [&](const Rect& r) { return in.tap_x >= r.x && in.tap_x < r.x + r.w && in.tap_y >= r.y && in.tap_y < r.y + r.h; };
     if (!inside(panel_) || (touch_ui && inside(back_btn_))) { pop(); return true; }

@@ -221,6 +221,11 @@ opens the menu too). Picking a key or button that is already in use swaps the tw
 Steam Input can make one controller appear twice; if one pad moves both players, pick each player's
 *Device* by hand.
 
+The mouse works on the launcher (Windows and Linux): click a game to choose it and again to play it, click the
+buttons and the rows of its menus (on a setting's value, the left half steps back and the right half on), scroll
+lists with the wheel, and right-click or click outside a menu to go back. In fullscreen the pointer appears when
+the mouse moves and hides again at a key press. On the Steam Deck the touch screen works the same way.
+
 ## Files
 
 Settings are stored in `settings.ini`, earned achievements in `achievements.ini`, save states in `saves\`,

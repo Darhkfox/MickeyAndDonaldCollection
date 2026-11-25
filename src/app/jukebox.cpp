@@ -148,6 +148,10 @@ void Jukebox::update(const UiInput& in) {
         scroll_ -= in.drag / row_;
         free_scroll_ = true;
     }
+    if (in.wheel != 0) {   // (the mouse wheel: three rows a notch)
+        scroll_ += in.wheel * 3;
+        free_scroll_ = true;
+    }
     if (in.up || in.down || in.page_left || in.page_right) free_scroll_ = false;
     if (in.tap) {
         auto inside = [&](const Rect& r) { return in.tap_x >= r.x && in.tap_x < r.x + r.w && in.tap_y >= r.y && in.tap_y < r.y + r.h; };

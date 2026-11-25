@@ -122,10 +122,12 @@ void App::update_launcher(const UiInput& ui, double dt) {
     bool go = ui.confirm;
     if (ui.tap && over_launcher_link(ui.tap_x, ui.tap_y)) open_patreon();
     else if (ui.tap && over_update_badge(ui.tap_x, ui.tap_y)) open_update_page();
-    else if (ui.tap)   // touch: a card or button is chosen and used at once
+    else if (ui.tap)   // touch: a card or button is chosen and used at once; the mouse: a card is chosen, then played
         for (int i = 0; i < N + kButtonCount; i++) {
             const Rect& r = launcher_hit_[i];
-            if (ui.tap_x >= r.x && ui.tap_x < r.x + r.w && ui.tap_y >= r.y && ui.tap_y < r.y + r.h) { s = i; go = true; }
+            if (!(ui.tap_x >= r.x && ui.tap_x < r.x + r.w && ui.tap_y >= r.y && ui.tap_y < r.y + r.h)) continue;
+            go = !(ui.mouse && i < N && s != i);
+            s = i;
         }
     if (s < N) launcher_last_card_ = s;
     if (go) {

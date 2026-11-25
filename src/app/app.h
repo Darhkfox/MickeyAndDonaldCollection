@@ -190,6 +190,16 @@ private:
     std::string picking_image_;          // the launcher picture being picked (a game id or "background")
     void pick_image(const std::string& name);   // Android's picture picker; copied to files/covers/<name>.png
     void poll_image();
+#else
+    // The mouse (Windows / Linux), on the launcher, its menus and the Music Player: a click acts as a tap (a card is
+    // chosen, a second click plays it), the wheel scrolls lists, the right button goes back. In fullscreen the pointer
+    // shows once the mouse moves on the launcher, until a key or a controller's button is pressed or a game starts.
+    struct MouseInput { bool click = false, right = false; float x = 0, y = 0, wheel = 0; };
+    MouseInput mouse_in_;                // from the window's events since the last frame (taken by poll_ui)
+    bool mouse_shown_ = false;
+    bool cursor_shown_ = true;           // what the pointer was last set to (the platform code follows cursor_visible())
+    bool cursor_visible() const { return !is_fullscreen_ || (mode_ == Mode::Launcher && mouse_shown_); }
+    void update_cursor();                // (per frame: shows / hides the pointer when cursor_visible() changes)
 #endif
     uint64_t rom_sig_ = 0;
     double rom_poll_ = 0;

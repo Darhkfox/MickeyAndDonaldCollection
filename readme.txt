@@ -120,6 +120,13 @@
 
   Every key can be changed under Options > Controls.
 
+  THE MOUSE (on the launcher): click a game to choose it, and again to
+  play it; click the buttons and the rows of the menus (on a setting's
+  value, the left half steps back and the right half on); the wheel
+  scrolls lists; right-click, or click outside a menu, to go back. In
+  fullscreen the pointer appears when the mouse moves and hides again when
+  you press a key. On the Steam Deck the touch screen works the same way.
+
 
 --------------------------------------------------------------------------------
   GAMEPAD CONTROLS  (Xbox-style layout; other USB pads work too)

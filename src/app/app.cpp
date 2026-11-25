@@ -128,6 +128,14 @@ UiInput App::poll_ui(float dt) {
     if (touch_.take_tap(u.tap_x, u.tap_y)) u.tap = true;
     u.drag = touch_.take_drag();
     if (touch_.take_pressed(TouchControls::BtnMenu)) u.menu = true;
+#else
+    if (mode_ == Mode::Launcher) {
+        if (mouse_in_.click) { u.tap = u.mouse = true; u.tap_x = mouse_in_.x; u.tap_y = mouse_in_.y; }
+        u.wheel = mouse_in_.wheel;
+        if (mouse_in_.right && (menu_.active() || jukebox_.active())) u.back = true;
+    }
+    mouse_in_ = MouseInput();
+    if (u.key_pressed || u.pad_pressed || mode_ != Mode::Launcher) mouse_shown_ = false;
 #endif
     return u;
 }
@@ -481,6 +489,9 @@ bool App::load_script(const std::wstring& path) {
         else if (c == "set") script_.push_back({fr, 0, 10, a});       // key=value: widescreen, color, filter, hud_anchor
         else if (c == "award") script_.push_back({fr, 0, 11, a});     // an achievement id (tests of the pop-up / pages)
         else if (c == "welcome") script_.push_back({fr, 0, 12, ""});  // the first start's achievements page
+        else if (c == "click") script_.push_back({fr, 0, 13, a});     // the mouse: a left click at "x,y" (0..1 of the picture)
+        else if (c == "rclick") script_.push_back({fr, 0, 14, ""});   // ... a right click
+        else if (c == "wheel") script_.push_back({fr, 0, 15, a});     // ... wheel notches (+ = down)
     }
     std::stable_sort(script_.begin(), script_.end(), [](const ScriptStep& x, const ScriptStep& y) { return x.frame < y.frame; });
     return true;
@@ -526,6 +537,19 @@ void App::run_script() {
             break;
         }
         case 12: ach_welcome(); break;
+#ifndef __ANDROID__
+        case 13: {
+            float fx = 0, fy = 0;
+            if (sscanf(s.arg.c_str(), "%f,%f", &fx, &fy) != 2) break;
+            mouse_in_.click = true;
+            mouse_in_.x = fx * video_.width();
+            mouse_in_.y = fy * video_.height();
+            if (mode_ == Mode::Launcher) mouse_shown_ = true;
+            break;
+        }
+        case 14: mouse_in_.right = true; break;
+        case 15: mouse_in_.wheel += (float)atof(s.arg.c_str()); break;
+#endif
         case 10: {
             // live video setting changes, as the Options menu makes them (trailer before/after shots)
             size_t eq = s.arg.find('=');

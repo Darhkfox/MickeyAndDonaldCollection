@@ -142,23 +142,33 @@ int App::run() {
             case SDL_JOYDEVICEREMOVED:
                 input_.on_device_change();
                 break;
-            // The launcher's logo / Patreon page and the update badge are links: a hand over them, a click opens them.
+            // The mouse (see App::mouse_in_): clicks, right clicks and the wheel for poll_ui; a hand over the launcher's
+            // links (the logo / Patreon page, the update badge). A touch screen's taps (the Steam Deck's) come as clicks.
             case SDL_MOUSEMOTION:
-            case SDL_MOUSEBUTTONDOWN:
-                if (mode_ == Mode::Launcher && !menu_.active()) {
-                    int cw = 1, ch = 1;   // (window points -> drawable pixels: HiDPI)
-                    SDL_GetWindowSize(window_, &cw, &ch);
-                    const int mx = e.type == SDL_MOUSEMOTION ? e.motion.x : e.button.x, my = e.type == SDL_MOUSEMOTION ? e.motion.y : e.button.y;
-                    const float x = mx * (float)w / std::max(1, cw), y = my * (float)h / std::max(1, ch);
-                    if (e.type == SDL_MOUSEMOTION) {
-                        static SDL_Cursor* hand = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_HAND);
-                        static SDL_Cursor* arrow = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
-                        SDL_SetCursor(over_launcher_link(x, y) || over_update_badge(x, y) ? hand : arrow);
-                    } else if (e.button.button == SDL_BUTTON_LEFT) {
-                        if (over_launcher_link(x, y)) open_patreon();
-                        else if (over_update_badge(x, y)) open_update_page();
-                    }
+            case SDL_MOUSEBUTTONDOWN: {
+                int cw = 1, ch = 1;   // (window points -> drawable pixels: HiDPI)
+                SDL_GetWindowSize(window_, &cw, &ch);
+                const int mx = e.type == SDL_MOUSEMOTION ? e.motion.x : e.button.x, my = e.type == SDL_MOUSEMOTION ? e.motion.y : e.button.y;
+                const float x = mx * (float)w / std::max(1, cw), y = my * (float)h / std::max(1, ch);
+                if (e.type == SDL_MOUSEMOTION) {
+                    if (mode_ == Mode::Launcher && (e.motion.xrel || e.motion.yrel)) mouse_shown_ = true;
+                    static SDL_Cursor* hand = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_HAND);
+                    static SDL_Cursor* arrow = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
+                    const bool link = mode_ == Mode::Launcher && !menu_.active() && !jukebox_.active() &&
+                                      (over_launcher_link(x, y) || over_update_badge(x, y));
+                    SDL_SetCursor(link ? hand : arrow);
+                } else if (e.button.button == SDL_BUTTON_LEFT) {
+                    mouse_in_.click = true;
+                    mouse_in_.x = x;
+                    mouse_in_.y = y;
+                    if (mode_ == Mode::Launcher) mouse_shown_ = true;
+                } else if (e.button.button == SDL_BUTTON_RIGHT) {
+                    mouse_in_.right = true;
                 }
+                break;
+            }
+            case SDL_MOUSEWHEEL:
+                mouse_in_.wheel -= e.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -(float)e.wheel.y : (float)e.wheel.y;
                 break;
             default: break;
             }
@@ -175,6 +185,7 @@ int App::run() {
         }
         audio_.set_paused(false);
         frame(dt);
+        if (cursor_visible() != cursor_shown_) update_cursor();
         if (!settings_.vsync && !autotest_) {
             // Software pacing when not synchronised to the display (fast forward runs more game frames per picture)
             const double target = 1.0 / (kEmuFps * hfr_subs_);
@@ -200,9 +211,15 @@ int App::run() {
 void App::set_fullscreen(bool fs) {
     if (!window_ || fs == is_fullscreen_) return;
     SDL_SetWindowFullscreen(window_, fs ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
-    SDL_ShowCursor(fs ? SDL_DISABLE : SDL_ENABLE);
     is_fullscreen_ = fs;
     settings_.fullscreen = fs;
+    update_cursor();   // (fullscreen hides the pointer until the mouse moves on the launcher)
+}
+
+// The pointer: shown or hidden as cursor_visible() says (each frame, and when the display mode changes).
+void App::update_cursor() {
+    cursor_shown_ = cursor_visible();
+    SDL_ShowCursor(cursor_shown_ ? SDL_ENABLE : SDL_DISABLE);
 }
 
 void App::resize_window_to_scale() {

@@ -123,6 +123,7 @@ int App::run(HINSTANCE inst, int show) {
         }
         audio_.set_paused(false);
         frame(dt);
+        if (cursor_visible() != cursor_shown_) update_cursor();
         if (!settings_.vsync) {
             // Software pacing when not synchronised to the display (fast forward too: it runs more game frames
             // per displayed frame, not more displayed frames).
@@ -191,15 +192,29 @@ void App::set_fullscreen(bool fs) {
         SetWindowLongW(hwnd_, GWL_STYLE, WS_POPUP | WS_VISIBLE);
         SetWindowPos(hwnd_, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left,
                      mi.rcMonitor.bottom - mi.rcMonitor.top, SWP_FRAMECHANGED | SWP_NOOWNERZORDER);
-        ShowCursor(FALSE);
     } else {
         SetWindowLongW(hwnd_, GWL_STYLE, WS_OVERLAPPEDWINDOW | WS_VISIBLE);
         SetWindowPlacement(hwnd_, &windowed_placement_);
         SetWindowPos(hwnd_, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
-        ShowCursor(TRUE);
     }
     is_fullscreen_ = fs;
     settings_.fullscreen = fs;
+    update_cursor();   // (fullscreen hides the pointer until the mouse moves on the launcher)
+}
+
+// The pointer over the window's picture: hidden or not as cursor_visible() says, a hand over the launcher's links.
+// Called on WM_SETCURSOR and each frame (a game starting, a key pressed: it hides without the mouse moving).
+void App::update_cursor() {
+    POINT pt;
+    if (!GetCursorPos(&pt) || WindowFromPoint(pt) != hwnd_) return;
+    ScreenToClient(hwnd_, &pt);
+    RECT rc;
+    GetClientRect(hwnd_, &rc);
+    if (!PtInRect(&rc, pt)) return;   // (the frame and title bar keep their own pointers)
+    cursor_shown_ = cursor_visible();
+    const bool link = mode_ == Mode::Launcher && !menu_.active() && !jukebox_.active() &&
+                      (over_launcher_link((float)pt.x, (float)pt.y) || over_update_badge((float)pt.x, (float)pt.y));
+    SetCursor(cursor_shown_ ? LoadCursorW(nullptr, link ? IDC_HAND : IDC_ARROW) : nullptr);
 }
 
 RECT App::centered_rect(const RECT& work, int w, int h) {
@@ -299,23 +314,34 @@ LRESULT App::wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_SYSCOMMAND:
         if ((wp & 0xFFF0) == SC_KEYMENU) return 0;   // no beep/menu on Alt
         break;
-    // The launcher's logo / Patreon page is a link: a hand over it, a click opens it.
+    // The mouse (see App::mouse_in_): the pointer as cursor_visible() says - a hand over the launcher's links (the
+    // logo / Patreon page, the update badge) - and its clicks, right clicks and wheel for poll_ui.
     case WM_SETCURSOR:
-        if (LOWORD(lp) == HTCLIENT && mode_ == Mode::Launcher && !menu_.active()) {
-            POINT pt;
-            GetCursorPos(&pt);
-            ScreenToClient(h, &pt);
-            const bool link = over_launcher_link((float)pt.x, (float)pt.y) || over_update_badge((float)pt.x, (float)pt.y);
-            SetCursor(LoadCursorW(nullptr, link ? IDC_HAND : IDC_ARROW));
+        if (LOWORD(lp) == HTCLIENT) {
+            update_cursor();
             return TRUE;
         }
         break;
-    case WM_LBUTTONDOWN:
-        if (mode_ == Mode::Launcher && !menu_.active()) {
-            const float x = (float)(short)LOWORD(lp), y = (float)(short)HIWORD(lp);
-            if (over_launcher_link(x, y)) open_patreon();
-            else if (over_update_badge(x, y)) open_update_page();
+    case WM_MOUSEMOVE: {
+        static LPARAM last = -1;   // (a real move: not the one Windows sends as the window appears or the pointer shows)
+        if (mode_ == Mode::Launcher && last != -1 && lp != last && !mouse_shown_) {
+            mouse_shown_ = true;
+            update_cursor();
         }
+        last = lp;
+        return 0;
+    }
+    case WM_LBUTTONDOWN:
+        mouse_in_.click = true;
+        mouse_in_.x = (float)(short)LOWORD(lp);
+        mouse_in_.y = (float)(short)HIWORD(lp);
+        if (mode_ == Mode::Launcher) mouse_shown_ = true;
+        return 0;
+    case WM_RBUTTONDOWN:
+        mouse_in_.right = true;
+        return 0;
+    case WM_MOUSEWHEEL:
+        mouse_in_.wheel -= (float)GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA;
         return 0;
     case WM_EXITSIZEMOVE:
         remember_monitor();   // dragging the window to another display selects that display

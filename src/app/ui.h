@@ -13,9 +13,11 @@ struct UiInput {
     bool page_left = false, page_right = false;
     int  key_pressed = 0;          // raw VK pressed this frame (for rebinding)
     uint32_t pad_pressed = 0;      // normalised pad buttons pressed this frame
-    bool tap = false;              // touch screens: a tap at tap_x / tap_y (backbuffer pixels)
+    bool tap = false;              // touch screens: a tap at tap_x / tap_y (backbuffer pixels); the mouse: a click
     float tap_x = 0, tap_y = 0;
+    bool mouse = false;            // the tap is a mouse click (the launcher: a card is chosen, a second click plays it)
     float drag = 0;                // vertical finger movement since the last frame (pixels)
+    float wheel = 0;               // mouse wheel since the last frame (notches; + = down the list)
 };
 
 struct MenuItem {
