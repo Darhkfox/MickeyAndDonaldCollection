@@ -3,8 +3,8 @@
 1 ICON "app.ico"
 
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION 1,1,0,0
-PRODUCTVERSION 1,1,0,0
+FILEVERSION 1,3,1,0
+PRODUCTVERSION 1,3,1,0
 FILEOS VOS_NT_WINDOWS32
 FILETYPE VFT_APP
 BEGIN
@@ -12,10 +12,10 @@ BEGIN
   BEGIN
     BLOCK "040904b0"
     BEGIN
-      VALUE "FileDescription", "Castle of Illusion & QuackShot - PC Edition"
-      VALUE "FileVersion", "1.1.0"
-      VALUE "ProductName", "Castle of Illusion & QuackShot - PC Edition"
-      VALUE "ProductVersion", "1.1.0"
+      VALUE "FileDescription", "Mickey & Donald Collection - PC Edition"
+      VALUE "FileVersion", "1.3.1"
+      VALUE "ProductName", "Mickey & Donald Collection - PC Edition"
+      VALUE "ProductVersion", "1.3.1"
       VALUE "OriginalFilename", "DisneyClassics.exe"
     END
   END

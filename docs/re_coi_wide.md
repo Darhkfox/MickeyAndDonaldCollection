@@ -280,6 +280,21 @@ into it, and the MD+ COI ROM leaves it untouched.
   spawned or no longer pass the difficulty / respawn filters are forgotten, and the list is cleared by the initial
   fill. In the sweep every dropped entry is then made within 1-150 px of camera travel (16:9 and 21:9). 4:3 is
   unchanged (the original drops them).
+* **Toyland 1's overlong list (fixed in v1.3.1, GitHub issue #23; found, explained and fixed by simplePsyduck).** The
+  list of cell (2,18) at `$CE43` has count byte 2 (three entries) but holds two (`$CE44`, `$CE4D`); its "third" at
+  `$CE56` is the next list's count byte and first entry (`$CE57`, a diamond at x 496, y 2256) read one byte early, so
+  its spawned byte is that diamond's sub (`$CE59` = `$09`). The original spawner walks it too, but bit 0 is set so it
+  only takes it as already spawned. The #19 model marked it due (bit 7): the sub became `$89`, and the diamond, made
+  with it, set up animation `$F3` instead of `$0C` - frames pointing into other data, scraps of sprites beside the
+  slide that kept animating (16:9 and wider; the original never writes there). Now only entries with an object in a
+  slot are marked (`live_entries()`: the mark is only read by an object waiting on its own entry, so nothing else
+  changes), and a configure in gameplay takes bit 7 off such a phantom's byte and makes an object built with the
+  broken sub (`+$29` bit 7) afresh as the spawner would, so states saved with the damage are put right whatever the
+  mode. Checks (`tools/qa/i23`): every level-select round's layout scanned, `$CE43` is the only list that runs into
+  the next one (`i23_scan.py`); from the reporter's state with the sub put back to `$09` the old build marks it again
+  after 37 frames and the fixed one never does (`i23_mark.py`); the trailer bot's 18 COI clips at 16:9 and 21:9 (the
+  two recorded at 4:3 also at 4:3) and a walk through all 28 level-select entries at 16:9 and 21:9 give the same work
+  RAM every frame as before (`i23_regress.py`).
 * `$1FF6` "object on screen" (camX < X <= camX+320, camY < Y <= camY+192) is only used to decide whether
   to play an enemy SFX (4 callers) — widened by patch S1 (optional).
 * Objects `$BE/$BF` (Dessert 1 background sprites that move with plane B, `$FDFC/$FE0C`): own window

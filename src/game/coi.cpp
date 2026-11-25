@@ -414,8 +414,74 @@ bool layout_of(const MegaDrive& md, Layout& L) {
     return L.w > 0 && L.h > 0 && off >= 4 + L.w * L.h && 0xCA00 + off < 0x10000;
 }
 
+// The "spawned" bytes of the layout objects in the slots now. Only those are marked due (the mark is for an object
+// waiting on its own entry), as a list can claim more entries than it holds: Toyland 1's cell (2,18) at $CE43 says 3
+// and holds 2, so its "third" is the next list's count byte and first entry read one byte early, and that entry's
+// "spawned" byte is the real entry's sub (the diamond at x 496, y 2256: $09). The original spawner reads it too but only
+// tries bset #0 there (already set); marking it due made the sub $89, and the diamond then came in with a broken
+// animation - scraps of sprites beside the slide (GitHub issue #23: found and fixed by simplePsyduck). No other list in
+// the game runs over (tools/qa/i23/i23_scan.py).
+struct LiveEntries {
+    uint16_t sb[64];
+    int n = 0;
+    bool has(uint32_t v) const {
+        for (int i = 0; i < n; i++)
+            if (sb[i] == (uint16_t)v) return true;
+        return false;
+    }
+};
+
+LiveEntries live_entries(const MegaDrive& md) {
+    LiveEntries e;
+    for (uint32_t obj = 0xFFD000; obj < 0xFFE000 && e.n < 64; obj += 0x40)
+        if (const uint32_t sb = layout_byte(md, obj)) e.sb[e.n++] = (uint16_t)sb;
+    return e;
+}
+
+// States saved with the old marking carry the damage: bit 7 on an extra entry's "spawned" byte, which is the next list's
+// entry's sub (the original never sets it there). It is taken off again, and an object made from that entry with the
+// broken sub is made afresh as the spawner makes one ($6D684: id, sub, entry, Y, X in a cleared slot), running at once.
+// (On configure, so a state loaded in any mode is put right; only in gameplay, when $CA00 holds the round's layout.)
+void repair_phantoms(MegaDrive& md) {
+    Layout L;
+    if ((md.ram16(MODE) != M_GAMEPLAY && md.ram16(MODE) != M_WARP) || !layout_of(md, L)) return;
+    uint16_t starts[256];
+    int n = 0;
+    bool seen[256] = {};
+    for (int c = 0; c < L.w * L.h; c++) {
+        const int li = md.ram8(0xFFCA04 + c);
+        if (!li || seen[li]) continue;
+        seen[li] = true;
+        starts[n++] = (uint16_t)(L.lists + s16(md.ram16(L.lists + li * 2 - 2)));
+    }
+    std::sort(starts, starts + n);
+    for (int k = 0; k + 1 < n; k++) {
+        const int next = starts[k + 1], count = md.ram8(0xFF0000 | starts[k]) + 1;
+        for (int i = 0; i < count; i++) {
+            const int e = starts[k] + 1 + 9 * i, sb = e + 3;
+            if (e + 9 <= next || sb <= next || (sb - next - 1) % 9 != 2) continue;   // (a real entry, or not on a sub)
+            const uint8_t b = md.ram8(0xFF0000 | sb);
+            if (!(b & SB_DUE)) continue;
+            md.set_ram8(0xFF0000 | sb, (uint8_t)(b & ~SB_DUE));
+            const uint32_t real = 0xFF0000 | (uint16_t)(sb - 2);
+            for (uint32_t obj = 0xFFD000; obj < 0xFFE000; obj += 0x40) {
+                if (md.ram16(obj + 0x24) != (uint16_t)(real + 3) || md.ram8(obj + 1) != md.ram8(real + 1) ||
+                    !(md.ram8(obj + 0x29) & 0x80))
+                    continue;
+                for (int j = 0; j < 0x40; j++) md.set_ram8(obj + j, 0);
+                md.set_ram8(obj + 1, md.ram8(real + 1));            // id
+                md.set_ram8(obj + 0x29, md.ram8(real + 2));         // sub
+                md.set_ram16(obj + 0x24, (uint16_t)(real + 3));
+                md.set_ram16(obj + 0x14, md.ram16(real + 5));       // Y
+                md.set_ram16(obj + 0x10, md.ram16(real + 7));       // X
+                md.set_ram8(real + 3, SB_SPAWNED | SB_DUE);         // (not waiting: its set-up runs next frame)
+            }
+        }
+    }
+}
+
 // What the original spawner ($6D612) spawns in cell (col, row): its entries the wide one has spawned become due.
-void mark_cell(MegaDrive& md, const Layout& L, int col, int row, int diff) {
+void mark_cell(MegaDrive& md, const Layout& L, int col, int row, int diff, const LiveEntries& live) {
     if (col < 0 || row < 0 || col >= L.w || row >= L.h) return;
     const int li = md.ram8(0xFFCA04 + row * L.w + col);
     if (!li) return;
@@ -427,7 +493,7 @@ void mark_cell(MegaDrive& md, const Layout& L, int col, int row, int diff) {
         if (diff < 8 && ((flags >> diff) & 1)) continue;   // not on this difficulty
         if ((flags & 0x20) && !md.ram8(p + 4)) continue;    // its respawns are used up
         const uint8_t b = md.ram8(p + 3);
-        if (b & SB_SPAWNED) md.set_ram8(p + 3, b | SB_DUE);
+        if ((b & SB_SPAWNED) && live.has(p + 3)) md.set_ram8(p + 3, b | SB_DUE);
     }
 }
 
@@ -461,16 +527,19 @@ void spawner_model(MegaDrive& md) {
     const int diff = md.ram8(0xFFFF0D);
     const int cy = s16(md.ram16(CAM)), py = s16(md.ram16(CAM + 0x14)), dy = s16(md.ram16(CAM + 0x1C));
     const int cx = s16(md.ram16(CAM + 4)), px = s16(md.ram16(CAM + 0x18)), dx = s16(md.ram16(CAM + 0x1E));
-    if ((cy ^ py) & 0x80) {   // a cell row when Y crosses a 128-px line: the five columns around the camera
+    const bool row = (cy ^ py) & 0x80, col = (v ^ vprev) & 0x80;
+    if (!row && !col) return;
+    const LiveEntries live = live_entries(md);
+    if (row) {   // a cell row when Y crosses a 128-px line: the five columns around the camera
         const int r = (int16_t)(cy + (dy >= 0 ? 0x180 : -0x71));
         if (r >= 0)
-            for (int c = (v >> 7) - 1; c <= (v >> 7) + 3; c++) mark_cell(md, L, c, r >> 7, diff);
+            for (int c = (v >> 7) - 1; c <= (v >> 7) + 3; c++) mark_cell(md, L, c, r >> 7, diff, live);
     }
-    if ((v ^ vprev) & 0x80) {   // a cell column when X does
+    if (col) {   // a cell column when X does
         const bool right = v == cx && vprev == px ? dx >= 0 : v > vprev;
         const int r = (int16_t)(v + (right ? 0x180 : -0x71));
         if (r >= 0)
-            for (int y = (cy >> 7) - 1; y <= (cy >> 7) + 3; y++) mark_cell(md, L, r >> 7, y, diff);
+            for (int y = (cy >> 7) - 1; y <= (cy >> 7) + 3; y++) mark_cell(md, L, r >> 7, y, diff, live);
     }
 }
 
@@ -482,10 +551,11 @@ void fill_model(MegaDrive& md) {
     const int v = (ms & V43_START) ? (int16_t)(ms & 0xFFFF) : s16(md.ram16(CAM + 4));
     md.module_state[1] = V43_KNOWN | (uint16_t)v;
     const int diff = md.ram8(0xFFFF0D), cy = s16(md.ram16(CAM));
+    const LiveEntries live = live_entries(md);
     for (int d = 0; d < 0x280; d += 0x80) {
         const int r = (int16_t)(v + d - 0x71);
         if (r >= 0)
-            for (int y = (cy >> 7) - 1; y <= (cy >> 7) + 3; y++) mark_cell(md, L, r >> 7, y, diff);
+            for (int y = (cy >> 7) - 1; y <= (cy >> 7) + 3; y++) mark_cell(md, L, r >> 7, y, diff, live);
     }
 }
 
@@ -632,6 +702,7 @@ void after_update(MegaDrive& md, int E) {
 // Configure: hooks on for the wide modes. Objects already in when they weren't kept by them (4:3 until now, a state
 // from 4:3 or an older build: no known 4:3 camera) count as due; in 4:3 waiting ones get their own flags back.
 void wide_objects(MegaDrive& md, int E) {
+    repair_phantoms(md);
     const bool kept = (md.module_state[1] & V43_KNOWN) != 0;
     if (E <= 0) md.module_state[1] = 0;
     for (uint32_t obj = 0xFFD000; obj < 0xFFE000 && !(E > 0 && kept); obj += 0x40) {
